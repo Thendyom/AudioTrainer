@@ -90,7 +90,7 @@ FastAPI:
 uvicorn app.fastapi_app:app --reload
 ```
 
-The app pages cover Pitch Trainer, Score Creator, Speech Coach, and Voice Profile. Instrument detection remains available in the library and CLI, but the app page is disabled while the baseline classifier is improved.
+The app pages cover Pitch Trainer, Score Creator, Speech Coach, and Voice Profile. Pitch Trainer includes a stoppable live monitor plus an optional written-note mode for transposing instruments such as tenor saxophone. Score Creator, Speech Coach, and Voice Profile include microphone capture workflows as well as upload workflows. Instrument detection remains available in the library and CLI, but the app page is disabled while the baseline classifier is improved.
 
 ## Limitations
 
