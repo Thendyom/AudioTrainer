@@ -13,7 +13,6 @@ from audiotrainer.api.service import (
     analyze_pitch_file,
     analyze_speech_file,
     analyze_voice_profile_file,
-    classify_instrument_file,
     transcribe_file,
 )
 from audiotrainer.coaching.feedback import generate_pitch_feedback
@@ -28,7 +27,7 @@ st.title("AudioTrainer")
 
 
 def main() -> None:
-    tabs = st.tabs(["Pitch Trainer", "Note Writer", "Speech Coach", "Voice Profile", "Instrument Detector"])
+    tabs = st.tabs(["Pitch Trainer", "Score Creator", "Speech Coach", "Voice Profile"])
     with tabs[0]:
         pitch_trainer()
     with tabs[1]:
@@ -37,8 +36,6 @@ def main() -> None:
         speech_coach()
     with tabs[3]:
         voice_profile()
-    with tabs[4]:
-        instrument_detector()
 
 
 def pitch_trainer() -> None:
@@ -197,17 +194,6 @@ def voice_profile() -> None:
         cols[4].metric("Confidence", f"{estimate.confidence:.0%}")
         st.caption(estimate.explanation)
         feedback_table(feedback)
-
-
-def instrument_detector() -> None:
-    uploaded = audio_input("instrument-audio")
-    if uploaded:
-        with temp_audio(uploaded) as path:
-            estimate = classify_instrument_file(path)
-        cols = st.columns(2)
-        cols[0].metric("Instrument", estimate.label)
-        cols[1].metric("Confidence", f"{estimate.confidence:.0%}")
-        st.caption(estimate.explanation)
 
 
 def audio_input(key: str):
