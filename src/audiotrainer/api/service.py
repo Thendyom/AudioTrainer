@@ -21,7 +21,7 @@ from audiotrainer.coaching.feedback import (
     generate_speech_feedback,
     generate_voice_feedback,
 )
-from audiotrainer.coaching.scoring import score_pitch_accuracy
+from audiotrainer.coaching.scoring import infer_target_note, score_pitch_accuracy
 from audiotrainer.instruments.classifier import classify_instrument
 from audiotrainer.instruments.features import extract_instrument_features
 from audiotrainer.pitch.yin import detect_pitch
@@ -36,7 +36,8 @@ def analyze_pitch_file(path: str | Path, target_note: str | None = None) -> tupl
 
     audio, sr = load_audio(path)
     track = detect_pitch(audio, sr)
-    score = score_pitch_accuracy(track, target_note)
+    selected_target = target_note or infer_target_note(track)
+    score = score_pitch_accuracy(track, selected_target)
     return track, score, generate_pitch_feedback(score)
 
 
@@ -48,12 +49,12 @@ def transcribe_file(path: str | Path) -> tuple[PitchTrack, list[NoteEvent]]:
     return track, pitch_track_to_notes(track)
 
 
-def analyze_speech_file(path: str | Path) -> tuple[ProsodyReport, list[FeedbackItem]]:
+def analyze_speech_file(path: str | Path, goal: str = "balanced") -> tuple[ProsodyReport, list[FeedbackItem]]:
     """Load a speech file, analyze prosody, and return feedback."""
 
     audio, sr = load_audio(path)
     report = analyze_prosody(audio, sr)
-    return report, generate_speech_feedback(report)
+    return report, generate_speech_feedback(report, goal=goal)
 
 
 def compare_speech_files(user_path: str | Path, reference_path: str | Path) -> PronunciationReport:
@@ -72,7 +73,8 @@ def analyze_voice_profile_file(path: str | Path) -> tuple[VocalRange, VoiceTypeE
     audio, sr = load_audio(path)
     track = detect_pitch(audio, sr, fmin=55.0, fmax=1_100.0)
     vocal_range = estimate_vocal_range(track)
-    estimate = classify_voice_type(vocal_range)
+    prosody = analyze_prosody(audio, sr)
+    estimate = classify_voice_type(vocal_range, speaking_pitch=prosody.mean_pitch_hz)
     feedback = [*generate_voice_feedback(vocal_range), *generate_voice_feedback(estimate)]
     return vocal_range, estimate, feedback
 

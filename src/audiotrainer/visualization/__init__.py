@@ -2,6 +2,7 @@
 
 from audiotrainer.visualization.piano_roll import plot_piano_roll
 from audiotrainer.visualization.pitch_plot import plot_pitch_track
+from audiotrainer.visualization.score_plot import plot_score
 from audiotrainer.visualization.spectrogram import plot_spectrogram
 
-__all__ = ["plot_piano_roll", "plot_pitch_track", "plot_spectrogram"]
+__all__ = ["plot_piano_roll", "plot_pitch_track", "plot_score", "plot_spectrogram"]

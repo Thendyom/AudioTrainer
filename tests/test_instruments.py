@@ -20,3 +20,12 @@ def test_classifier_returns_supported_label() -> None:
     estimate = classify_instrument(extract_instrument_features(audio, sr))
     assert estimate.label in {"voice", "piano", "guitar", "violin", "flute", "saxophone", "unknown"}
     assert 0.0 <= estimate.confidence <= 1.0
+
+
+def test_classifier_prefers_voice_for_human_like_harmonic_signal() -> None:
+    sr = 16_000
+    t = np.arange(sr, dtype=np.float64) / sr
+    audio = sum((1 / harmonic) * np.sin(2 * np.pi * 160 * harmonic * t) for harmonic in range(1, 10))
+    audio = 0.2 * audio / np.max(np.abs(audio))
+    estimate = classify_instrument(extract_instrument_features(audio, sr))
+    assert estimate.label == "voice"

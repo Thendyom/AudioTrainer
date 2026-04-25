@@ -5,6 +5,7 @@ from audiotrainer.coaching import (
     generate_pitch_feedback,
     generate_speech_feedback,
     generate_voice_feedback,
+    infer_target_note,
     score_pitch_accuracy,
     score_pitch_stability,
 )
@@ -24,6 +25,10 @@ def test_score_pitch_accuracy_uses_target_note() -> None:
     assert score.accuracy > 0.95
     assert score.stability > 0.9
     assert score.voiced_frame_count == 3
+
+
+def test_infer_target_note_uses_weighted_voiced_frames() -> None:
+    assert infer_target_note(make_pitch_track()) == "A4"
 
 
 def test_score_pitch_stability_penalizes_wide_variation() -> None:
@@ -46,7 +51,7 @@ def test_pitch_feedback_handles_unvoiced_score() -> None:
     assert items[0].severity == "critical"
 
 
-def test_speech_feedback_flags_monotony() -> None:
+def test_speech_feedback_flags_monotony_and_goal_advice() -> None:
     report = ProsodyReport(
         duration=4.0,
         mean_pitch_hz=180.0,
@@ -56,7 +61,9 @@ def test_speech_feedback_flags_monotony() -> None:
         estimated_speech_rate=2.0,
         monotony_score=0.9,
     )
-    assert generate_speech_feedback(report)[0].category == "pronunciation"
+    feedback = generate_speech_feedback(report, goal="presenter presence")
+    assert feedback[0].category == "pronunciation"
+    assert any("Presenter" in item.message for item in feedback)
 
 
 def test_voice_feedback_reports_low_confidence() -> None:

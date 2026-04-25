@@ -9,8 +9,9 @@ The package is designed so the core library does the work and the CLI, Streamlit
 - Pitch detection with a compact YIN baseline.
 - Frequency-to-note conversion and cents error reporting.
 - Pitch accuracy and stability scoring.
-- Note-event transcription with CSV and dependency-free MIDI export.
-- Speech prosody analysis: pitch contour, intensity, pause patterns, speaking-rate proxy, and monotony.
+- Automatic target-note inference with manual override.
+- Note-event transcription with CSV, MusicXML, and dependency-free MIDI export.
+- Speech prosody analysis: pitch contour, intensity, pause patterns, speaking-rate proxy, monotony, and presenter-focused feedback.
 - Reference speech comparison at the prosody level.
 - Vocal range and rough voice type estimation with explicit uncertainty.
 - Rule-based instrument classification from spectral features.

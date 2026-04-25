@@ -4,6 +4,7 @@ import pytest
 
 from audiotrainer.api.schemas import PitchFrame, PitchTrack
 from audiotrainer.transcription import export_midi, export_notes_csv, pitch_track_to_notes
+from audiotrainer.transcription.score_export import export_musicxml, note_events_to_score_text
 
 
 def make_track() -> PitchTrack:
@@ -40,3 +41,12 @@ def test_export_midi_writes_standard_header(tmp_path: Path) -> None:
     data = output.read_bytes()
     assert data.startswith(b"MThd")
     assert b"MTrk" in data
+
+
+def test_score_text_and_musicxml_export(tmp_path: Path) -> None:
+    events = pitch_track_to_notes(make_track(), min_duration=0.05)
+    assert "A4" in note_events_to_score_text(events)
+    output = export_musicxml(events, tmp_path / "score.musicxml")
+    text = output.read_text(encoding="utf-8")
+    assert "<score-partwise" in text
+    assert "<step>A</step>" in text

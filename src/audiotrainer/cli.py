@@ -80,11 +80,12 @@ def transcribe(
 def speech(
     file: Path = typer.Argument(..., exists=True, readable=True, help="Speech file to analyze."),
     reference: Path | None = typer.Option(None, "--reference", "-r", exists=True, readable=True),
+    goal: str = typer.Option("balanced", "--goal", help="balanced, clear pronunciation, or presenter presence."),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
 ) -> None:
     """Analyze speech prosody and optional reference similarity."""
 
-    report, feedback = analyze_speech_file(file)
+    report, feedback = analyze_speech_file(file, goal=goal)
     comparison = compare_speech_files(file, reference) if reference else None
     if json_output:
         _print_json({"prosody": report, "comparison": comparison, "feedback": feedback})

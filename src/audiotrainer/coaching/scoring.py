@@ -36,6 +36,19 @@ def score_pitch_accuracy(track: PitchTrack, target_notes: str | list[str] | None
     )
 
 
+def infer_target_note(track: PitchTrack, *, min_confidence: float = 0.3) -> str | None:
+    """Infer the closest practical target note from the strongest voiced frames."""
+
+    weights: dict[str, float] = {}
+    for frame in track.frames:
+        if frame.note is None or frame.frequency_hz is None or frame.confidence < min_confidence:
+            continue
+        weights[frame.note] = weights.get(frame.note, 0.0) + frame.confidence
+    if not weights:
+        return None
+    return max(weights.items(), key=lambda item: item[1])[0]
+
+
 def score_pitch_stability(track: PitchTrack) -> float:
     """Score pitch stability from frame-to-frame variation."""
 

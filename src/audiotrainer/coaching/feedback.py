@@ -60,7 +60,7 @@ def generate_pitch_feedback(score: PitchScore) -> list[FeedbackItem]:
     return feedback
 
 
-def generate_speech_feedback(report: ProsodyReport) -> list[FeedbackItem]:
+def generate_speech_feedback(report: ProsodyReport, goal: str = "balanced") -> list[FeedbackItem]:
     """Generate feedback from a prosody report."""
 
     feedback: list[FeedbackItem] = []
@@ -101,13 +101,14 @@ def generate_speech_feedback(report: ProsodyReport) -> list[FeedbackItem]:
                 suggestion="Group words into longer phrases and pause at sentence boundaries.",
             )
         )
+    feedback.extend(_goal_feedback(report, goal))
     if not feedback:
         feedback.append(
             FeedbackItem(
                 severity="info",
                 category="pronunciation",
-                message="Prosody measurements look balanced for this recording.",
-                suggestion="For pronunciation-specific scoring, compare against a clean reference recording.",
+                message="Delivery measurements look balanced for this recording.",
+                suggestion="For sharper articulation work, repeat the same line and compare it against a clean reference.",
             )
         )
     return feedback
@@ -132,6 +133,12 @@ def generate_voice_feedback(profile: VocalRange | VoiceTypeEstimate) -> list[Fee
                 category="voice",
                 message=f"Stable range estimate: {profile.lowest_note} to {profile.highest_note}.",
                 suggestion="Treat this as a practical range estimate, not a fixed voice-type diagnosis.",
+            ),
+            FeedbackItem(
+                severity="info",
+                category="voice",
+                message=f"Measured stable span: {profile.stable_range_semitones:.1f} semitones.",
+                suggestion="Record a slow siren or scale from comfortable low to comfortable high to improve the range estimate.",
             )
         ]
 
@@ -144,3 +151,61 @@ def generate_voice_feedback(profile: VocalRange | VoiceTypeEstimate) -> list[Fee
             suggestion="Confirm voice type over multiple recordings and with comfortable low, middle, and high notes.",
         )
     ]
+
+
+def _goal_feedback(report: ProsodyReport, goal: str) -> list[FeedbackItem]:
+    normalized = goal.lower().strip()
+    feedback: list[FeedbackItem] = []
+    pitch_range = report.pitch_range_semitones or 0.0
+    speech_rate = report.estimated_speech_rate
+
+    if normalized in {"presenter", "presenter presence", "charismatic delivery", "charisma"}:
+        if pitch_range < 4.0:
+            feedback.append(
+                FeedbackItem(
+                    severity="warning",
+                    category="pronunciation",
+                    message="Presenter energy is low because pitch movement is limited.",
+                    suggestion="Pick three keywords and lift or drop your pitch on those words instead of speaking the line flat.",
+                )
+            )
+        if report.pause_count == 0 and report.duration > 5:
+            feedback.append(
+                FeedbackItem(
+                    severity="info",
+                    category="timing",
+                    message="The delivery has few deliberate pauses.",
+                    suggestion="Add a short pause before the main point and after the final phrase to sound more controlled.",
+                )
+            )
+        if speech_rate is not None and speech_rate > 4.0:
+            feedback.append(
+                FeedbackItem(
+                    severity="warning",
+                    category="timing",
+                    message="The delivery may feel rushed for a presenter.",
+                    suggestion="Slow the first sentence and leave space after names, numbers, and claims.",
+                )
+            )
+
+    if normalized in {"clear pronunciation", "pronunciation", "clarity"}:
+        if speech_rate is not None and speech_rate > 3.8:
+            feedback.append(
+                FeedbackItem(
+                    severity="warning",
+                    category="pronunciation",
+                    message="Fast attacks can blur consonants.",
+                    suggestion="Repeat the line at 80 percent speed, exaggerating final consonants, then return to normal speed.",
+                )
+            )
+        if report.mean_intensity < 0.03:
+            feedback.append(
+                FeedbackItem(
+                    severity="info",
+                    category="pronunciation",
+                    message="The recording level is low for reliable clarity coaching.",
+                    suggestion="Record closer to the microphone and speak through the ends of words.",
+                )
+            )
+
+    return feedback
