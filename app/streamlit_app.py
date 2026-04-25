@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from statistics import median
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import streamlit as st
 
+from audiotrainer.audio.device import record_audio
 from audiotrainer.api.service import (
     analyze_pitch_file,
     analyze_speech_file,
@@ -16,6 +18,7 @@ from audiotrainer.api.service import (
 )
 from audiotrainer.coaching.feedback import generate_pitch_feedback
 from audiotrainer.coaching.scoring import score_pitch_accuracy
+from audiotrainer.pitch import cents_error, detect_pitch, hz_to_note
 from audiotrainer.transcription.score_export import export_musicxml, note_events_to_score_text
 from audiotrainer.transcription.note_events import export_notes_csv
 from audiotrainer.visualization import plot_piano_roll, plot_pitch_track, plot_score
@@ -39,6 +42,8 @@ def main() -> None:
 
 
 def pitch_trainer() -> None:
+    live_pitch_monitor()
+    st.divider()
     uploaded = audio_input("pitch-audio")
     if uploaded:
         with temp_audio(uploaded) as path:
@@ -55,6 +60,88 @@ def pitch_trainer() -> None:
         metric_cols[3].metric("Stability", f"{score.stability:.0%}")
         metric_cols[4].metric("Mean cents", "n/a" if score.mean_abs_cents is None else f"{score.mean_abs_cents:.1f}")
         feedback_table(feedback)
+
+
+def live_pitch_monitor() -> None:
+    st.subheader("Live Pitch Monitor")
+    controls = st.columns(4)
+    target = controls[0].text_input("Target note", value="A4", key="live-target-note")
+    chunk_seconds = controls[1].slider("Window", min_value=0.15, max_value=1.0, value=0.35, step=0.05)
+    monitor_seconds = controls[2].slider("Duration", min_value=3, max_value=60, value=15, step=1)
+    sample_rate = controls[3].selectbox("Sample rate", [16_000, 22_050, 44_100], index=1)
+
+    metric_slot = st.empty()
+    chart_slot = st.empty()
+    status_slot = st.empty()
+    if not st.button("Start live monitor", type="primary"):
+        return
+
+    history: list[dict[str, float]] = []
+    iterations = max(1, int(monitor_seconds / chunk_seconds))
+    for index in range(iterations):
+        try:
+            audio = record_audio(chunk_seconds, sample_rate)
+            track = detect_pitch(
+                audio,
+                sample_rate,
+                frame_length=1024 if sample_rate <= 22_050 else 2048,
+                hop_length=256,
+                fmin=55.0,
+                fmax=1_100.0,
+                smooth=False,
+            )
+        except RuntimeError as exc:
+            status_slot.error(str(exc))
+            return
+
+        current = current_pitch(track)
+        elapsed = (index + 1) * chunk_seconds
+        if current is None:
+            with metric_slot.container():
+                cols = st.columns(5)
+                cols[0].metric("Frequency", "unvoiced")
+                cols[1].metric("Closest note", "n/a")
+                cols[2].metric("Target", target or "auto")
+                cols[3].metric("Cents off", "n/a")
+                cols[4].metric("Confidence", "0%")
+            status_slot.caption("No stable pitch detected in the current window.")
+            continue
+
+        frequency, closest_note, confidence = current
+        selected_target = target.strip() or closest_note
+        cents = cents_error(frequency, selected_target)
+        history.append({"time": elapsed, "cents": cents})
+        with metric_slot.container():
+            cols = st.columns(5)
+            cols[0].metric("Frequency", f"{frequency:.1f} Hz")
+            cols[1].metric("Closest note", closest_note)
+            cols[2].metric("Target", selected_target)
+            cols[3].metric("Cents off", cents_status(cents), delta=cents_direction(cents))
+            cols[4].metric("Confidence", f"{confidence:.0%}")
+        chart_slot.line_chart(history, x="time", y="cents")
+        status_slot.caption(f"{elapsed:.1f}s / {monitor_seconds:.1f}s")
+
+
+def current_pitch(track):
+    voiced = [frame for frame in track.frames if frame.frequency_hz is not None and frame.confidence >= 0.2]
+    if not voiced:
+        return None
+    recent = voiced[-min(6, len(voiced)) :]
+    frequency = float(median(frame.frequency_hz for frame in recent if frame.frequency_hz is not None))
+    confidence = sum(frame.confidence for frame in recent) / len(recent)
+    return frequency, hz_to_note(frequency).name, confidence
+
+
+def cents_status(cents: float) -> str:
+    if abs(cents) < 3.0:
+        return "on"
+    return f"{abs(cents):.1f}"
+
+
+def cents_direction(cents: float) -> str:
+    if abs(cents) < 3.0:
+        return "in tune"
+    return "sharp" if cents > 0 else "flat"
 
 
 def note_writer() -> None:
