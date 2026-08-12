@@ -20,6 +20,15 @@ def test_detect_pause_patterns_finds_silence_between_tones() -> None:
     assert report.total_pause_time > 0.15
 
 
+def test_detect_pause_patterns_reports_all_silence_as_one_pause() -> None:
+    sr = 8_000
+    report = detect_pause_patterns(np.zeros(sr // 2), sr)
+    assert report.pause_count == 1
+    assert report.total_pause_time == 0.5
+    assert report.mean_pause_time == 0.5
+    assert report.pauses == [(0.0, 0.5)]
+
+
 def test_analyze_prosody_reports_pitch_and_monotony() -> None:
     sr = 8_000
     t = np.arange(sr, dtype=np.float64) / sr

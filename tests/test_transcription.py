@@ -27,6 +27,36 @@ def test_pitch_track_to_notes_segments_contiguous_notes() -> None:
     assert events[0].frequency_hz == 441.0
 
 
+def test_pitch_track_to_notes_bridges_short_unvoiced_dropout() -> None:
+    frames = [
+        PitchFrame(time=0.00, frequency_hz=440.0, confidence=0.9, note="A4", cents=0.0),
+        PitchFrame(time=0.05, frequency_hz=441.0, confidence=0.9, note="A4", cents=4.0),
+        PitchFrame(time=0.10, frequency_hz=None, confidence=0.0, note=None, cents=None),
+        PitchFrame(time=0.15, frequency_hz=439.0, confidence=0.9, note="A4", cents=-4.0),
+        PitchFrame(time=0.20, frequency_hz=440.0, confidence=0.9, note="A4", cents=0.0),
+    ]
+    events = pitch_track_to_notes(PitchTrack(sample_rate=22_050, frames=frames), min_duration=0.05, max_gap=0.08)
+    assert len(events) == 1
+    assert events[0].start_time == 0.0
+    assert events[0].end_time == pytest.approx(0.25)
+    assert events[0].frequency_hz == 440.0
+
+
+def test_pitch_track_to_notes_splits_long_unvoiced_gap() -> None:
+    frames = [
+        PitchFrame(time=0.00, frequency_hz=440.0, confidence=0.9, note="A4", cents=0.0),
+        PitchFrame(time=0.05, frequency_hz=441.0, confidence=0.9, note="A4", cents=4.0),
+        PitchFrame(time=0.10, frequency_hz=None, confidence=0.0, note=None, cents=None),
+        PitchFrame(time=0.15, frequency_hz=None, confidence=0.0, note=None, cents=None),
+        PitchFrame(time=0.20, frequency_hz=439.0, confidence=0.9, note="A4", cents=-4.0),
+        PitchFrame(time=0.25, frequency_hz=440.0, confidence=0.9, note="A4", cents=0.0),
+    ]
+    events = pitch_track_to_notes(PitchTrack(sample_rate=22_050, frames=frames), min_duration=0.05, max_gap=0.08)
+    assert [event.note for event in events] == ["A4", "A4"]
+    assert events[0].end_time == pytest.approx(0.10)
+    assert events[1].start_time == pytest.approx(0.20)
+
+
 def test_export_notes_csv_writes_header_and_rows(tmp_path: Path) -> None:
     events = pitch_track_to_notes(make_track(), min_duration=0.05)
     output = export_notes_csv(events, tmp_path / "notes.csv")

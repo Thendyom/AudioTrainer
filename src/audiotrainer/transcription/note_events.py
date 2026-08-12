@@ -29,11 +29,6 @@ def pitch_track_to_notes(
     for frame in track.frames:
         voiced = frame.frequency_hz is not None and frame.note is not None and frame.confidence >= min_confidence
         if not voiced:
-            if current:
-                groups.append(current)
-                current = []
-            last_time = None
-            last_note = None
             continue
 
         gap = 0.0 if last_time is None else frame.time - last_time
