@@ -17,12 +17,22 @@ error = cents_error(445.0, "A4")
 ## Transcription
 
 ```python
-from audiotrainer.transcription import export_midi, export_notes_csv, pitch_track_to_notes
+from audiotrainer.api.service import create_score_file
+from audiotrainer.transcription import export_midi, export_notes_csv, export_score_musicxml
 
-events = pitch_track_to_notes(track)
+track, events, score, metadata = create_score_file(
+    "melody.wav",
+    bpm=120,
+    time_signature="4/4",
+    quantization=4,
+)
 export_notes_csv(events, "notes.csv")
 export_midi(events, "notes.mid")
+export_score_musicxml(score, "notes.musicxml")
 ```
+
+The score document preserves rests, validates monophonic edits, splits measures,
+and marks notes tied across barlines.
 
 ## Speech
 
@@ -34,6 +44,18 @@ comparison = compare_reference_speech(user_audio, reference_audio, sr)
 ```
 
 `compare_reference_speech` is intentionally prosody-level in the baseline release. It does not perform phoneme alignment.
+
+For file-based coaching with quality checks and feedback:
+
+```python
+from audiotrainer.api.service import coach_speech_file
+
+result = coach_speech_file(
+    "take.wav",
+    reference_path="reference.wav",
+    goal="presenter presence",
+)
+```
 
 ## Voice Profile
 
@@ -56,3 +78,24 @@ estimate = classify_instrument(features)
 ```
 
 The default classifier is rule-based and intended as a small baseline.
+
+## Recording Quality and Exercises
+
+```python
+from audiotrainer.api.service import analyze_audio_quality, run_pitch_exercise
+
+quality = analyze_audio_quality("scale.wav")
+exercise = run_pitch_exercise("scale.wav", ["C4", "D4", "E4"])
+```
+
+## Local Practice History
+
+```python
+from audiotrainer.history import SessionRepository
+
+history = SessionRepository()
+recent = history.list(mode="pitch", limit=20)
+```
+
+Recordings are retained only when `retain_audio=True` is passed while saving a
+session. Deleting the session also deletes its managed recording.

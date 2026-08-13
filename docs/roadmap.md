@@ -1,31 +1,28 @@
 # Roadmap
 
-AudioTrainer starts with deterministic audio analysis and leaves heavier ML backends optional.
+AudioTrainer focuses on fast deterministic audio analysis with no trained-model runtime.
 
-## Near Term
+## Delivered in 0.2
 
-- Improve YIN performance on noisy microphone input.
-- Add live pitch buffering utilities shared by CLI and app.
-- Add export helpers for JSON reports.
-- Add more visualizations for speech pauses and intensity.
-- Add regression fixtures with small generated audio clips.
+- Recording quality analysis and improved pitch stabilization.
+- Rolling audio buffering and dependable browser recording workflows.
+- Editable monophonic scores with rests, measures, ties, and full exports.
+- Local practice history, trend dashboard, and privacy controls.
 
-## Optional Adapters
+## Analysis Improvements
 
-- `librosa.pyin` pitch backend as an optional adapter.
-- scikit-learn instrument classifier adapter.
-- phoneme alignment adapter for pronunciation reports.
-- Whisper or wav2vec adapter for word-level speech feedback.
+- Calibrated deterministic instrument-specific feature rules.
+- More detailed language-neutral pause and emphasis metrics.
+- Lower-latency browser pitch feedback without external services.
 
 ## Product
 
-- Persistent coaching sessions.
-- User-defined target-note exercises.
-- Practice history and trend charts.
-- Calibrated microphone setup checks.
+- Longer-lived microphone calibration profiles.
+- Exercise scheduling and goal-based practice plans.
+- Additional comparable-session trend metrics.
 
 ## Quality
 
-- More synthetic test coverage for noisy and unvoiced audio.
+- Wider real-world device and room-acoustics fixtures.
 - Performance benchmarks for short clips.
 - Public API stability checks.

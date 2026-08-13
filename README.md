@@ -1,20 +1,22 @@
 # AudioTrainer
 
-AudioTrainer is a lightweight Python library and runnable app for audio coaching. It provides deterministic baselines for pitch detection, note transcription, speech prosody, voice profiling, instrument features, and feedback generation without shipping model weights or requiring large ML frameworks.
+AudioTrainer 0.2 is a local-first library and Streamlit product for music and speech practice. Every analysis is deterministic, runs on the local machine, and requires no account, cloud API, or model download.
 
 The package is designed so the core library does the work and the CLI, Streamlit UI, and FastAPI service remain thin wrappers.
 
 ## Current Features
 
 - Pitch detection with a compact YIN baseline.
+- Recording-quality checks, sustained-note and note-sequence exercises, reference tones, and transposing-instrument notation.
 - Frequency-to-note conversion and cents error reporting.
 - Pitch accuracy and stability scoring.
 - Automatic target-note inference with manual override.
-- Note-event transcription with CSV, MusicXML, and dependency-free MIDI export.
+- Editable beat-quantized monophonic scores with rests, measures, ties, CSV, JSON, MusicXML, and dependency-free MIDI export.
 - Speech prosody analysis: pitch contour, intensity, pause patterns, speaking-rate proxy, monotony, and presenter-focused feedback.
-- Reference speech comparison at the prosody level.
+- Reference speech comparison at the prosody and delivery level.
 - Vocal range and rough voice type estimation with explicit uncertainty.
-- Rule-based instrument classification from spectral features.
+- Experimental rule-based instrument classification with explicit uncertainty.
+- Local SQLite practice history, trends, export, deletion, and opt-in recording retention.
 - Typer CLI, Streamlit app, FastAPI app, examples, and tests.
 
 ## Install
@@ -36,11 +38,14 @@ pip install -e ".[app]"
 ```bash
 audiotrainer --help
 audiotrainer pitch path/to/file.wav --target A4
-audiotrainer transcribe path/to/file.wav --csv-out notes.csv --midi-out notes.mid
+audiotrainer pitch path/to/scale.wav --targets C4,D4,E4
+audiotrainer pitch path/to/file.wav --target A4 --save
+audiotrainer transcribe path/to/file.wav --musicxml-out score.musicxml --json-out score.json
 audiotrainer speech path/to/speech.wav
 audiotrainer speech path/to/user.wav --reference path/to/reference.wav
 audiotrainer voice-profile path/to/scale.wav
 audiotrainer instrument path/to/clip.wav
+audiotrainer history list
 audiotrainer app
 ```
 
@@ -80,17 +85,21 @@ estimate = classify_voice_type(profile)
 
 Streamlit:
 
+From the repository root:
+
 ```bash
-streamlit run app/streamlit_app.py
+.venv/bin/python -m streamlit run app/streamlit_app.py
 ```
 
 FastAPI:
 
 ```bash
-uvicorn app.fastapi_app:app --reload
+.venv/bin/python -m uvicorn app.fastapi_app:app --reload
 ```
 
-The app pages cover Pitch Trainer, Score Creator, Speech Coach, and Voice Profile. Pitch Trainer includes a stoppable live monitor plus an optional written-note mode for transposing instruments such as tenor saxophone. Score Creator, Speech Coach, and Voice Profile include microphone capture workflows as well as upload workflows. Instrument detection remains available in the library and CLI, but the app page is disabled while the baseline classifier is improved.
+The Streamlit website exposes the deterministic offline product only: Dashboard, Pitch, Score, Speech, Voice, Instruments, and Privacy. Recorded workflows use the browser microphone or file uploads. Metrics and reports are stored locally; recordings remain temporary unless retention is enabled before analysis.
+
+By default, history uses `platformdirs.user_data_dir("AudioTrainer")`. Set `AUDIOTRAINER_DATA_DIR` to isolate or relocate local data for testing or portable installations.
 
 ## Limitations
 
@@ -98,12 +107,13 @@ The app pages cover Pitch Trainer, Score Creator, Speech Coach, and Voice Profil
 - Pronunciation analysis is prosody-level only; it does not claim phoneme-perfect scoring.
 - Voice type estimates are rough and probabilistic. A short recording is not enough for confident classification.
 - Instrument recognition is a rule-based baseline, not a trained classifier.
+- Score creation is intentionally monophonic; chords are out of scope.
+- Speech comparison does not transcribe words or claim phoneme-perfect scoring.
 - FastAPI upload endpoints require the `app` extra because multipart upload support is optional.
 
-## Roadmap
+## Next
 
-- Optional advanced pitch backends behind adapter interfaces.
-- Optional phoneme alignment and ASR adapters.
-- Optional scikit-learn instrument classifier.
-- More robust live audio workflows.
-- Richer coaching-session persistence and progress tracking.
+- Longer-lived live-audio calibration profiles across different microphones.
+- Better deterministic instrument discrimination and calibration.
+- Richer language-neutral timing and delivery coaching.
+- Richer exercise scheduling and goal-based practice plans.

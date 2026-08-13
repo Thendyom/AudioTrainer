@@ -24,9 +24,11 @@ def test_analyze_pitch_file_infers_target_note(monkeypatch: pytest.MonkeyPatch) 
     assert feedback
 
 
-def test_compare_speech_files_rejects_mismatched_sample_rates(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls = iter([(np.zeros(10), 8_000), (np.zeros(10), 16_000)])
+def test_compare_speech_files_resamples_mismatched_sample_rates(monkeypatch: pytest.MonkeyPatch) -> None:
+    user = 0.2 * np.sin(2 * np.pi * 180 * np.arange(8_000) / 8_000)
+    reference = 0.2 * np.sin(2 * np.pi * 180 * np.arange(16_000) / 16_000)
+    calls = iter([(user, 8_000), (reference, 16_000)])
     monkeypatch.setattr(service, "load_audio", lambda path: next(calls))
 
-    with pytest.raises(ValueError, match="matching sample rates"):
-        service.compare_speech_files("user.wav", "reference.wav")
+    report = service.compare_speech_files("user.wav", "reference.wav")
+    assert report.overall_score > 0.8

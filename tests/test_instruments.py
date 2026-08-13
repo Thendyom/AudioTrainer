@@ -1,6 +1,6 @@
 import numpy as np
 
-from audiotrainer.instruments import classify_instrument, extract_instrument_features
+from audiotrainer.instruments import classify_instrument, extract_instrument_features, rank_instrument_candidates
 
 
 def test_extract_instrument_features_returns_expected_shape() -> None:
@@ -20,6 +20,9 @@ def test_classifier_returns_supported_label() -> None:
     estimate = classify_instrument(extract_instrument_features(audio, sr))
     assert estimate.label in {"voice", "piano", "guitar", "violin", "flute", "saxophone", "unknown"}
     assert 0.0 <= estimate.confidence <= 1.0
+    candidates = rank_instrument_candidates(extract_instrument_features(audio, sr))
+    assert len(candidates) == 6
+    assert candidates == sorted(candidates, key=lambda item: item.confidence, reverse=True)
 
 
 def test_classifier_prefers_voice_for_human_like_harmonic_signal() -> None:

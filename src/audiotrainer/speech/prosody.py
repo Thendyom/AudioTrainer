@@ -5,14 +5,19 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
-from audiotrainer.api.schemas import PauseReport, ProsodyReport
+from audiotrainer.api.schemas import PauseReport, PitchTrack, ProsodyReport
 from audiotrainer.audio.framing import frame_audio
 from audiotrainer.audio.preprocessing import remove_dc
 from audiotrainer.pitch.notes import frequency_to_midi
 from audiotrainer.pitch.yin import detect_pitch
 
 
-def analyze_prosody(audio: NDArray[np.floating], sr: int) -> ProsodyReport:
+def analyze_prosody(
+    audio: NDArray[np.floating],
+    sr: int,
+    *,
+    pitch_track: PitchTrack | None = None,
+) -> ProsodyReport:
     """Analyze pitch, intensity, pauses, and monotony for speech."""
 
     if sr <= 0:
@@ -30,14 +35,7 @@ def analyze_prosody(audio: NDArray[np.floating], sr: int) -> ProsodyReport:
             monotony_score=1.0,
         )
 
-    pitch_track = detect_pitch(
-        signal,
-        sr,
-        frame_length=min(2048, max(512, _next_power_of_two(int(0.046 * sr)))),
-        hop_length=max(128, int(0.015 * sr)),
-        fmin=70.0,
-        fmax=500.0,
-    )
+    pitch_track = pitch_track or detect_speech_pitch(signal, sr)
     voiced = np.array([frame.frequency_hz for frame in pitch_track.frames if frame.frequency_hz is not None])
     mean_pitch = float(np.mean(voiced)) if voiced.size else None
     pitch_range = None
@@ -57,8 +55,31 @@ def analyze_prosody(audio: NDArray[np.floating], sr: int) -> ProsodyReport:
         pause_count=pauses.pause_count,
         estimated_speech_rate=speech_rate,
         monotony_score=0.0,
+        pitch_contour=[
+            (frame.time, frame.frequency_hz)
+            for frame in pitch_track.frames
+            if frame.frequency_hz is not None
+        ],
+        intensity_contour=[
+            (index * max(64, int(0.01 * sr)) / sr, float(value))
+            for index, value in enumerate(intensity)
+        ],
+        pauses=pauses.pauses,
     )
     return report.model_copy(update={"monotony_score": score_monotony(report)})
+
+
+def detect_speech_pitch(audio: NDArray[np.floating], sr: int) -> PitchTrack:
+    """Build the pitch track shared by prosody and recording-quality metrics."""
+
+    return detect_pitch(
+        audio,
+        sr,
+        frame_length=min(2048, max(512, _next_power_of_two(int(0.046 * sr)))),
+        hop_length=max(128, int(0.015 * sr)),
+        fmin=70.0,
+        fmax=500.0,
+    )
 
 
 def detect_pause_patterns(audio: NDArray[np.floating], sr: int) -> PauseReport:

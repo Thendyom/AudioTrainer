@@ -2,21 +2,14 @@
 
 from __future__ import annotations
 
-from audiotrainer.api.schemas import InstrumentEstimate, InstrumentFeatureVector
+from audiotrainer.api.schemas import InstrumentCandidate, InstrumentEstimate, InstrumentFeatureVector
 
 
 def classify_instrument(features: InstrumentFeatureVector) -> InstrumentEstimate:
     """Return a lightweight instrument estimate."""
 
-    voice_score = _score_voice(features)
-    scores = {
-        "voice": voice_score,
-        "piano": _score_piano(features),
-        "guitar": _score_guitar(features),
-        "violin": _score_violin(features),
-        "flute": _score_flute(features),
-        "saxophone": _score_saxophone(features),
-    }
+    scores = _profile_scores(features)
+    voice_score = scores["voice"]
     label, score = max(scores.items(), key=lambda item: item[1])
     if _looks_human_voice(features) and voice_score >= score - 0.18:
         label = "voice"
@@ -34,6 +27,39 @@ def classify_instrument(features: InstrumentFeatureVector) -> InstrumentEstimate
         confidence=float(confidence),
         explanation="Rule-based estimate from centroid, bandwidth, zero-crossing rate, RMS, and harmonicity.",
     )
+
+
+def rank_instrument_candidates(features: InstrumentFeatureVector) -> list[InstrumentCandidate]:
+    """Return all rule-based profiles in descending score order."""
+
+    details = {
+        "voice": "centroid, harmonicity, and low zero-crossing rate",
+        "piano": "bandwidth, rolloff, and moderate harmonicity",
+        "guitar": "mid centroid, bandwidth, and attack texture",
+        "violin": "high centroid, rolloff, and harmonicity",
+        "flute": "narrow bandwidth and strong harmonicity",
+        "saxophone": "mid centroid, bandwidth, harmonicity, and zero crossings",
+    }
+    scores = _profile_scores(features)
+    return [
+        InstrumentCandidate(
+            label=label,
+            confidence=float(max(0.0, min(1.0, score))),
+            raw_label=details[label],
+        )
+        for label, score in sorted(scores.items(), key=lambda item: item[1], reverse=True)
+    ]
+
+
+def _profile_scores(features: InstrumentFeatureVector) -> dict[str, float]:
+    return {
+        "voice": _score_voice(features),
+        "piano": _score_piano(features),
+        "guitar": _score_guitar(features),
+        "violin": _score_violin(features),
+        "flute": _score_flute(features),
+        "saxophone": _score_saxophone(features),
+    }
 
 
 def _score_voice(features: InstrumentFeatureVector) -> float:

@@ -8,14 +8,16 @@ AudioTrainer is organized as a reusable Python library with thin application ent
 
 The `audiotrainer` package owns all analysis logic:
 
-- `audio`: file loading, microphone recording, framing, and preprocessing.
+- `audio`: file loading, browser-stream buffering, quality analysis, framing, and preprocessing.
 - `pitch`: YIN/autocorrelation pitch detection, note conversion, and smoothing.
-- `transcription`: pitch-track segmentation plus CSV and MIDI export.
+- `transcription`: pitch-track segmentation, editable score documents, and CSV/JSON/MIDI/MusicXML export.
 - `speech`: prosody, pause detection, reference comparison, and voice profiling.
 - `instruments`: spectral feature extraction and rule-based classification.
 - `coaching`: scoring and feedback generation.
 - `visualization`: optional matplotlib plotting helpers.
 - `api`: pydantic result schemas and service functions.
+- `backends`: stable discovery of the built-in deterministic capabilities.
+- `history`: versioned local SQLite persistence with opt-in managed recordings.
 
 Public results are pydantic models so CLI output, web responses, and library users share the same contracts.
 
@@ -25,14 +27,12 @@ The Typer CLI, Streamlit UI, and FastAPI app call `audiotrainer.api.service`. Th
 
 ### Dependency Strategy
 
-The first implementation avoids TensorFlow, PyTorch, source separation, large ASR models, and pretrained weights. Core analysis is implemented with NumPy and small helper dependencies. App-only dependencies stay in the `app` optional extra.
+The product avoids TensorFlow, PyTorch, source separation, cloud APIs, and pretrained weights. Analysis is implemented with NumPy, SciPy, and small helper dependencies. App-only dependencies stay in the `app` optional extra.
 
-### Optional Model Adapters
+### Analysis Provenance
 
-Future ML backends should be added behind narrow interfaces:
+`AnalysisMetadata` records the built-in engine, processing time, and recording warnings. The legacy `auto` value remains accepted as an alias for source compatibility, but this release has no trained-model execution path.
 
-- pitch detector adapter returning `PitchTrack`
-- pronunciation adapter returning `PronunciationReport`
-- instrument classifier adapter returning `InstrumentEstimate`
+### Local Data
 
-Adapters should be optional extras and must not make the deterministic baseline slower or harder to install.
+Practice history lives in `platformdirs.user_data_dir("AudioTrainer")`. SQLite `PRAGMA user_version` controls migrations. Recordings are copied into managed storage only after opt-in and deleted with their session.

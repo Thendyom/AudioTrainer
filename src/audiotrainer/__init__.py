@@ -1,6 +1,8 @@
 """AudioTrainer public package exports."""
 
 from audiotrainer.api.schemas import (
+    AnalysisMetadata,
+    AudioQualityReport,
     FeedbackItem,
     InstrumentEstimate,
     InstrumentFeatureVector,
@@ -14,9 +16,17 @@ from audiotrainer.api.schemas import (
     ProsodyReport,
     VocalRange,
     VoiceTypeEstimate,
+    InstrumentAnalysisResult,
+    PitchExerciseResult,
+    PracticeSession,
+    ScoreDocument,
+    ScoreEvent,
+    SpeechCoachingResult,
 )
 
 __all__ = [
+    "AnalysisMetadata",
+    "AudioQualityReport",
     "FeedbackItem",
     "InstrumentEstimate",
     "InstrumentFeatureVector",
@@ -30,4 +40,10 @@ __all__ = [
     "ProsodyReport",
     "VocalRange",
     "VoiceTypeEstimate",
+    "InstrumentAnalysisResult",
+    "PitchExerciseResult",
+    "PracticeSession",
+    "ScoreDocument",
+    "ScoreEvent",
+    "SpeechCoachingResult",
 ]

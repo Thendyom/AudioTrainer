@@ -43,3 +43,17 @@ def rms_energy(audio: NDArray[np.floating]) -> float:
     if signal.size == 0:
         return 0.0
     return float(np.sqrt(np.mean(np.square(signal))))
+
+
+def resample_audio(audio: NDArray[np.floating], source_sr: int, target_sr: int) -> NDArray[np.float64]:
+    """Resample mono audio with deterministic linear interpolation."""
+
+    if source_sr <= 0 or target_sr <= 0:
+        raise ValueError("sample rates must be positive")
+    signal = to_mono(audio)
+    if source_sr == target_sr or signal.size == 0:
+        return signal.copy()
+    target_size = max(1, int(round(signal.size * target_sr / source_sr)))
+    source_positions = np.arange(signal.size, dtype=np.float64)
+    target_positions = np.linspace(0.0, max(0.0, signal.size - 1.0), target_size)
+    return np.interp(target_positions, source_positions, signal).astype(np.float64)
