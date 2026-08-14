@@ -10,6 +10,8 @@ from app.fastapi_app import app
 from audiotrainer.cli import app as cli_app
 from audiotrainer.history import SessionRepository
 
+STREAMLIT_APP = Path(__file__).resolve().parents[1] / "app" / "streamlit_app.py"
+
 
 def wav_bytes(frequency: float = 440.0, sr: int = 8_000) -> bytes:
     time = np.arange(sr // 2, dtype=np.float64) / sr
@@ -132,7 +134,7 @@ def test_streamlit_app_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     from streamlit.testing.v1 import AppTest
 
     monkeypatch.setenv("AUDIOTRAINER_DATA_DIR", str(tmp_path / "app-data"))
-    test = AppTest.from_file("app/streamlit_app.py", default_timeout=10).run()
+    test = AppTest.from_file(STREAMLIT_APP, default_timeout=10).run()
     assert not test.exception
     assert test.title[0].value == "AudioTrainer"
 
@@ -141,7 +143,7 @@ def test_streamlit_all_pages_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     from streamlit.testing.v1 import AppTest
 
     monkeypatch.setenv("AUDIOTRAINER_DATA_DIR", str(tmp_path / "page-data"))
-    test = AppTest.from_file("app/streamlit_app.py", default_timeout=10).run()
+    test = AppTest.from_file(STREAMLIT_APP, default_timeout=10).run()
     expected = {
         "Dashboard": "Practice dashboard",
         "Pitch": "Pitch trainer",
@@ -177,7 +179,7 @@ def test_streamlit_recorded_workflows(
     from streamlit.testing.v1 import AppTest
 
     monkeypatch.setenv("AUDIOTRAINER_DATA_DIR", str(tmp_path / f"{page}-data"))
-    test = AppTest.from_file("app/streamlit_app.py", default_timeout=20).run()
+    test = AppTest.from_file(STREAMLIT_APP, default_timeout=20).run()
     test.sidebar.radio[0].set_value(page).run()
     test.file_uploader[uploader_index].upload("tone.wav", wav_bytes(sr=16_000), "audio/wav").run()
     next(button for button in test.button if button.label == button_label).click().run(timeout=20)
@@ -193,7 +195,7 @@ def test_streamlit_speech_reference_workflow(tmp_path: Path, monkeypatch: pytest
     from streamlit.testing.v1 import AppTest
 
     monkeypatch.setenv("AUDIOTRAINER_DATA_DIR", str(tmp_path / "speech-data"))
-    test = AppTest.from_file("app/streamlit_app.py", default_timeout=20).run()
+    test = AppTest.from_file(STREAMLIT_APP, default_timeout=20).run()
     test.sidebar.radio[0].set_value("Speech").run()
     test.file_uploader[0].upload("user.wav", speech_bytes(8_000), "audio/wav").run()
     test.file_uploader[1].upload("reference.wav", speech_bytes(16_000, 2.0), "audio/wav").run()
@@ -215,7 +217,7 @@ def test_streamlit_ai_controls_default_off_and_persist(tmp_path: Path, monkeypat
 
     data_dir = tmp_path / "ai-controls"
     monkeypatch.setenv("AUDIOTRAINER_DATA_DIR", str(data_dir))
-    test = AppTest.from_file("app/streamlit_app.py", default_timeout=10).run()
+    test = AppTest.from_file(STREAMLIT_APP, default_timeout=10).run()
     assert test.sidebar.toggle[0].label == "Enable optional local AI"
     assert test.sidebar.toggle[0].value is False
     test.sidebar.toggle[0].set_value(True).run()
@@ -233,7 +235,7 @@ def test_streamlit_auto_backend_discloses_actual_engine(tmp_path: Path, monkeypa
     data_dir = tmp_path / "ai-auto"
     monkeypatch.setenv("AUDIOTRAINER_DATA_DIR", str(data_dir))
     save_ai_settings(AISettings(enabled=True), SessionRepository(data_dir))
-    test = AppTest.from_file("app/streamlit_app.py", default_timeout=20).run()
+    test = AppTest.from_file(STREAMLIT_APP, default_timeout=20).run()
     test.sidebar.radio[0].set_value("Pitch").run()
     test.selectbox[0].set_value("auto").run()
     test.file_uploader[1].upload("tone.wav", wav_bytes(sr=16_000), "audio/wav").run()
