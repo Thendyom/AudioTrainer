@@ -1,6 +1,6 @@
 # Roadmap
 
-AudioTrainer focuses on fast deterministic audio analysis with no trained-model runtime.
+AudioTrainer keeps a fast deterministic core and adds optional, explicitly managed local models.
 
 ## Delivered in 0.2
 
@@ -8,6 +8,8 @@ AudioTrainer focuses on fast deterministic audio analysis with no trained-model 
 - Rolling audio buffering and dependable browser recording workflows.
 - Editable monophonic scores with rests, measures, ties, and full exports.
 - Local practice history, trend dashboard, and privacy controls.
+- Optional pYIN pitch, Faster-Whisper word coaching, experimental AST mapping, and localhost generative advice.
+- Global and per-feature disable controls with no implicit model downloads.
 
 ## Analysis Improvements
 

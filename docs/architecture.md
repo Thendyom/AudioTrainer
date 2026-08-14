@@ -18,6 +18,7 @@ The `audiotrainer` package owns all analysis logic:
 - `api`: pydantic result schemas and service functions.
 - `backends`: stable discovery of the built-in deterministic capabilities.
 - `history`: versioned local SQLite persistence with opt-in managed recordings.
+- `ml`: optional pYIN, Faster-Whisper, AudioSet AST, localhost generative coaching, settings, and model lifecycle adapters.
 
 Public results are pydantic models so CLI output, web responses, and library users share the same contracts.
 
@@ -27,11 +28,15 @@ The Typer CLI, Streamlit UI, and FastAPI app call `audiotrainer.api.service`. Th
 
 ### Dependency Strategy
 
-The product avoids TensorFlow, PyTorch, source separation, cloud APIs, and pretrained weights. Analysis is implemented with NumPy, SciPy, and small helper dependencies. App-only dependencies stay in the `app` optional extra.
+The always-available path uses NumPy, SciPy, and small helper dependencies. Heavy runtimes are separated into `ml-pitch`, `ml-speech`, and `ml-instruments` extras. They are imported lazily inside adapter calls. Installing an extra never downloads weights; only the Models & Privacy page or the `models download` CLI command can populate AudioTrainer-managed model directories.
 
 ### Analysis Provenance
 
-`AnalysisMetadata` records the built-in engine, processing time, and recording warnings. The legacy `auto` value remains accepted as an alias for source compatibility, but this release has no trained-model execution path.
+`AnalysisMetadata` records requested and actual engines, processing time, warnings, and fallback reasons. `auto` may try an enabled local model, but always discloses a deterministic fallback. Explicit disabled or unavailable model requests fail rather than silently switching engines.
+
+### AI Boundaries
+
+The global AI switch defaults off and each feature has its own switch. Faster-Whisper and AST accept only managed local weights. Generative coaching accepts only localhost endpoints and sends measured values and transcript text, never audio. No cloud inference provider is built in.
 
 ### Local Data
 

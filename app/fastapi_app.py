@@ -28,8 +28,8 @@ from audiotrainer.api.schemas import (
 from audiotrainer.api.service import (
     analyze_audio_quality,
     analyze_instrument_file,
-    analyze_pitch_file,
-    analyze_voice_profile_file,
+    analyze_pitch_file_details,
+    analyze_voice_profile_details,
     classify_instrument_file,
     coach_speech_file,
     create_score_file,
@@ -37,6 +37,13 @@ from audiotrainer.api.service import (
 )
 from audiotrainer.backends import capabilities
 from audiotrainer.history import SessionRepository
+from audiotrainer.ml.manager import (
+    AISettings,
+    BackendDisabledError,
+    BackendUnavailableError,
+    get_ai_settings,
+    save_ai_settings,
+)
 
 app = FastAPI(title="AudioTrainer", version="0.2.0")
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024
@@ -50,6 +57,17 @@ def health() -> dict[str, str]:
 @app.get("/capabilities", response_model=CapabilitiesResponse)
 def get_capabilities() -> dict[str, object]:
     return capabilities()
+
+
+@app.get("/ai-settings", response_model=AISettings)
+def ai_settings() -> AISettings:
+    return get_ai_settings()
+
+
+@app.put("/ai-settings", response_model=AISettings)
+def update_ai_settings(settings: AISettings) -> AISettings:
+    save_ai_settings(settings)
+    return settings
 
 
 @app.post("/quality", response_model=AudioQualityReport)
@@ -67,14 +85,29 @@ async def pitch(
     target_note: str | None = None,
     persist: bool = Query(False),
     retain_audio: bool = Query(False),
+    backend: str = Query("yin"),
+    ai: bool = Query(False, description="Allow an explicitly selected optional local backend"),
 ) -> PitchAnalysisResponse:
     source = file.filename or "audio.wav"
     path = await _save_upload(file)
     try:
-        track, score, feedback = _translate_errors(lambda: analyze_pitch_file(path, target_note))
-        result = PitchAnalysisResponse(track=track, score=score, feedback=feedback)
+        track, score, feedback, quality_report, metadata = _translate_errors(
+            lambda: analyze_pitch_file_details(path, target_note, backend=backend, ai_enabled=ai)
+        )
+        result = PitchAnalysisResponse(
+            track=track, score=score, feedback=feedback, quality=quality_report, metadata=metadata
+        )
         _persist_if_requested(
-            persist, retain_audio, "pitch", path, source, "yin", {"target_note": target_note}, result, feedback, _track_duration(track)
+            persist,
+            retain_audio,
+            "pitch",
+            path,
+            source,
+            metadata.actual_backend,
+            {"target_note": target_note, "ai": ai},
+            result,
+            feedback,
+            _track_duration(track),
         )
         return result
     finally:
@@ -87,12 +120,14 @@ async def pitch_exercise(
     targets: str = Query(..., description="Comma-separated note names"),
     persist: bool = Query(False),
     retain_audio: bool = Query(False),
+    backend: str = Query("yin"),
+    ai: bool = Query(False),
 ) -> PitchExerciseResult:
     source = file.filename or "audio.wav"
     path = await _save_upload(file)
     try:
         target_notes = [value.strip() for value in targets.split(",") if value.strip()]
-        result = _translate_errors(lambda: run_pitch_exercise(path, target_notes))
+        result = _translate_errors(lambda: run_pitch_exercise(path, target_notes, backend=backend, ai_enabled=ai))
         _persist_if_requested(
             persist,
             retain_audio,
@@ -118,6 +153,8 @@ async def transcribe(
     quantization: int = Query(4, ge=1, le=32),
     persist: bool = Query(False),
     retain_audio: bool = Query(False),
+    backend: str = Query("yin"),
+    ai: bool = Query(False),
 ) -> TranscriptionResponse:
     source = file.filename or "audio.wav"
     path = await _save_upload(file)
@@ -128,6 +165,8 @@ async def transcribe(
                 bpm=bpm,
                 time_signature=time_signature,
                 quantization=quantization,
+                backend=backend,
+                ai_enabled=ai,
             )
         )
         result = TranscriptionResponse(events=events, score=score, metadata=metadata)
@@ -153,6 +192,12 @@ async def speech(
     file: UploadFile = File(...),
     reference: UploadFile | None = File(None),
     goal: str = Query("balanced"),
+    language: str | None = Query(None),
+    backend: str = Query("baseline"),
+    ai: bool = Query(False),
+    generative_coaching: bool = Query(False),
+    generative_endpoint: str = Query("http://127.0.0.1:11434"),
+    generative_model: str = Query(""),
     persist: bool = Query(False),
     retain_audio: bool = Query(False),
 ) -> SpeechCoachingResult:
@@ -166,6 +211,12 @@ async def speech(
                 path,
                 reference_path=reference_path,
                 goal=goal,
+                language=language,
+                backend=backend,
+                ai_enabled=ai,
+                generative_coaching=generative_coaching,
+                generative_endpoint=generative_endpoint,
+                generative_model=generative_model,
             )
         )
         _persist_if_requested(
@@ -175,7 +226,13 @@ async def speech(
             path,
             source,
             result.metadata.actual_backend,
-            {"goal": goal, "reference": reference is not None},
+            {
+                "goal": goal,
+                "reference": reference is not None,
+                "language": language,
+                "ai": ai,
+                "generative_coaching": generative_coaching,
+            },
             result,
             result.feedback,
             result.quality.duration,
@@ -192,24 +249,33 @@ async def voice_profile(
     file: UploadFile = File(...),
     persist: bool = Query(False),
     retain_audio: bool = Query(False),
+    backend: str = Query("yin"),
+    ai: bool = Query(False),
 ) -> VoiceProfileResponse:
     source = file.filename or "audio.wav"
     path = await _save_upload(file)
     try:
-        vocal_range, estimate, feedback = _translate_errors(lambda: analyze_voice_profile_file(path))
-        result = VoiceProfileResponse(range=vocal_range, estimate=estimate, feedback=feedback)
-        quality = analyze_audio_quality(path) if persist else None
+        _, vocal_range, estimate, feedback, quality_report, metadata = _translate_errors(
+            lambda: analyze_voice_profile_details(path, backend=backend, ai_enabled=ai)
+        )
+        result = VoiceProfileResponse(
+            range=vocal_range,
+            estimate=estimate,
+            feedback=feedback,
+            quality=quality_report,
+            metadata=metadata,
+        )
         _persist_if_requested(
             persist,
             retain_audio,
             "voice",
             path,
             source,
-            "yin",
+            metadata.actual_backend,
             {"workflow": "guided-range"},
             result,
             feedback,
-            quality.duration if quality else 0.0,
+            quality_report.duration,
         )
         return result
     finally:
@@ -233,11 +299,13 @@ async def instrument_analysis(
     file: UploadFile = File(...),
     persist: bool = Query(False),
     retain_audio: bool = Query(False),
+    backend: str = Query("baseline"),
+    ai: bool = Query(False),
 ) -> InstrumentAnalysisResult:
     source = file.filename or "audio.wav"
     path = await _save_upload(file)
     try:
-        result = _translate_errors(lambda: analyze_instrument_file(path))
+        result = _translate_errors(lambda: analyze_instrument_file(path, backend=backend, ai_enabled=ai))
         _persist_if_requested(
             persist,
             retain_audio,
@@ -291,8 +359,14 @@ async def _save_upload(file: UploadFile) -> Path:
 def _translate_errors(operation):
     try:
         return operation()
+    except (BackendUnavailableError, BackendDisabledError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except (ValueError, FileNotFoundError, OSError, RuntimeError) as exc:
-        status = 422 if "note" in str(exc).lower() or "backend" in str(exc).lower() or "signature" in str(exc).lower() else 400
+        status = (
+            422
+            if "note" in str(exc).lower() or "backend" in str(exc).lower() or "signature" in str(exc).lower()
+            else 400
+        )
         raise HTTPException(status_code=status, detail=str(exc)) from exc
 
 

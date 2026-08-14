@@ -23,7 +23,9 @@ def compare_reference_speech(
     energy_similarity = _ratio_similarity(user.mean_intensity, reference.mean_intensity)
     pause_similarity = _ratio_similarity(float(user.pause_count + 1), float(reference.pause_count + 1))
 
-    scores = [score for score in [duration_ratio, pitch_similarity, energy_similarity, pause_similarity] if score is not None]
+    scores = [
+        score for score in [duration_ratio, pitch_similarity, energy_similarity, pause_similarity] if score is not None
+    ]
     overall = float(np.mean(scores)) if scores else 0.0
     explanation = (
         "Prosody-level comparison only; this version does not perform phoneme alignment "

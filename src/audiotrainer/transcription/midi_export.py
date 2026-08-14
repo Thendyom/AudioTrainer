@@ -64,7 +64,7 @@ def _varlen(value: int) -> bytes:
     value >>= 7
     while value:
         buffer <<= 8
-        buffer |= ((value & 0x7F) | 0x80)
+        buffer |= (value & 0x7F) | 0x80
         value >>= 7
 
     output = bytearray()

@@ -1,6 +1,6 @@
 # AudioTrainer
 
-AudioTrainer 0.2 is a local-first library and Streamlit product for music and speech practice. Every analysis is deterministic, runs on the local machine, and requires no account, cloud API, or model download.
+AudioTrainer 0.2 is a local-first library and Streamlit product for music and speech practice. The deterministic engines are always available. Optional local models can be enabled per feature, never download implicitly, and can be disabled globally without removing their weights.
 
 The package is designed so the core library does the work and the CLI, Streamlit UI, and FastAPI service remain thin wrappers.
 
@@ -13,9 +13,11 @@ The package is designed so the core library does the work and the CLI, Streamlit
 - Automatic target-note inference with manual override.
 - Editable beat-quantized monophonic scores with rests, measures, ties, CSV, JSON, MusicXML, and dependency-free MIDI export.
 - Speech prosody analysis: pitch contour, intensity, pause patterns, speaking-rate proxy, monotony, and presenter-focused feedback.
+- Optional Faster-Whisper transcription with word timestamps, real WPM, repetition detection, English-only filler rules, multilingual language detection, and ordered reference alignment.
 - Reference speech comparison at the prosody and delivery level.
 - Vocal range and rough voice type estimation with explicit uncertainty.
-- Experimental rule-based instrument classification with explicit uncertainty.
+- Experimental rule-based instrument classification with optional local AudioSet AST and explicit unknown thresholds.
+- Optional pYIN pitch tracking and localhost-only generative speech coaching.
 - Local SQLite practice history, trends, export, deletion, and opt-in recording retention.
 - Typer CLI, Streamlit app, FastAPI app, examples, and tests.
 
@@ -24,14 +26,26 @@ The package is designed so the core library does the work and the CLI, Streamlit
 ```bash
 python -m venv .venv
 . .venv/bin/activate
-pip install -e ".[dev]"
+pip install ".[dev]"
 ```
 
 For the UI and plotting extras:
 
 ```bash
-pip install -e ".[app]"
+pip install ".[app]"
 ```
+
+Optional local ML dependencies are split so installations stay intentional:
+
+```bash
+pip install ".[ml-pitch]"
+pip install ".[ml-speech]"
+pip install ".[ml-instruments]"
+# or all three
+pip install ".[ml]"
+```
+
+Installing an extra does not download model weights. Use the **Models & Privacy** page or `audiotrainer models download speech|instruments` for an explicit download.
 
 ## CLI
 
@@ -43,9 +57,13 @@ audiotrainer pitch path/to/file.wav --target A4 --save
 audiotrainer transcribe path/to/file.wav --musicxml-out score.musicxml --json-out score.json
 audiotrainer speech path/to/speech.wav
 audiotrainer speech path/to/user.wav --reference path/to/reference.wav
+audiotrainer speech path/to/user.wav --backend faster-whisper --ai --language en
 audiotrainer voice-profile path/to/scale.wav
 audiotrainer instrument path/to/clip.wav
 audiotrainer history list
+audiotrainer models status
+audiotrainer models enable
+audiotrainer models disable
 audiotrainer app
 ```
 
@@ -97,7 +115,7 @@ FastAPI:
 .venv/bin/python -m uvicorn app.fastapi_app:app --reload
 ```
 
-The Streamlit website exposes the deterministic offline product only: Dashboard, Pitch, Score, Speech, Voice, Instruments, and Privacy. Recorded workflows use the browser microphone or file uploads. Metrics and reports are stored locally; recordings remain temporary unless retention is enabled before analysis.
+The Streamlit website exposes Dashboard, Pitch, Score, Speech, Voice, Instruments, and Models & Privacy. Recorded workflows use the browser microphone or file uploads. Metrics and reports are stored locally; recordings remain temporary unless retention is enabled before analysis. The master local-AI switch defaults off. Heavy runtimes are lazy-loaded only after an AI-backed analysis is selected.
 
 By default, history uses `platformdirs.user_data_dir("AudioTrainer")`. Set `AUDIOTRAINER_DATA_DIR` to isolate or relocate local data for testing or portable installations.
 
@@ -106,14 +124,15 @@ By default, history uses `platformdirs.user_data_dir("AudioTrainer")`. Set `AUDI
 - Pitch detection assumes mostly monophonic foreground audio.
 - Pronunciation analysis is prosody-level only; it does not claim phoneme-perfect scoring.
 - Voice type estimates are rough and probabilistic. A short recording is not enough for confident classification.
-- Instrument recognition is a rule-based baseline, not a trained classifier.
+- Instrument recognition remains experimental, including with AST.
 - Score creation is intentionally monophonic; chords are out of scope.
-- Speech comparison does not transcribe words or claim phoneme-perfect scoring.
+- Word alignment is not phoneme scoring and makes no phoneme-perfect pronunciation claim.
 - FastAPI upload endpoints require the `app` extra because multipart upload support is optional.
 
-## Next
+## Local model behavior
 
-- Longer-lived live-audio calibration profiles across different microphones.
-- Better deterministic instrument discrimination and calibration.
-- Richer language-neutral timing and delivery coaching.
-- Richer exercise scheduling and goal-based practice plans.
+- `auto` tries an enabled, installed local backend and reports any deterministic fallback.
+- An explicitly requested unavailable or disabled backend fails clearly instead of silently changing engines.
+- Faster-Whisper and AST read only AudioTrainer-managed local model directories.
+- Generative coaching accepts only `localhost`, `127.0.0.1`, or `::1` endpoints and sends metrics/transcript text—not audio.
+- Filler-word rules run for English only; other languages omit filler scoring.

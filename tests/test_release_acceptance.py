@@ -83,8 +83,8 @@ def test_all_library_workflows_and_exports(tmp_path: Path) -> None:
         quantization=4,
     )
     speech = coach_speech_file(speech_path, reference_path=reference_path, goal="presenter presence")
-    voice_track, vocal_range, voice_type, voice_feedback, voice_quality, voice_metadata = (
-        analyze_voice_profile_details(voice_path)
+    voice_track, vocal_range, voice_type, voice_feedback, voice_quality, voice_metadata = analyze_voice_profile_details(
+        voice_path
     )
     instrument = analyze_instrument_file(pitch_path)
 

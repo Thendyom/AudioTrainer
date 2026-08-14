@@ -7,7 +7,11 @@ import pytest
 from audiotrainer.api.schemas import NoteEvent, ScoreDocument, ScoreEvent
 from audiotrainer.audio.quality import analyze_audio_quality
 from audiotrainer.audio.live import RollingAudioBuffer
-from audiotrainer.transcription.score_document import create_score_document, parse_time_signature, score_document_to_note_events
+from audiotrainer.transcription.score_document import (
+    create_score_document,
+    parse_time_signature,
+    score_document_to_note_events,
+)
 from audiotrainer.transcription.score_export import export_score_musicxml
 
 
@@ -71,6 +75,8 @@ def test_multi_measure_musicxml_is_valid_and_contains_rests_and_ties(tmp_path: P
 def test_supported_ui_signatures_export_measure_attributes(tmp_path: Path, signature: str) -> None:
     event = NoteEvent(start_time=0.0, end_time=0.75, frequency_hz=261.63, note="C4", confidence=0.9)
     document = create_score_document([event], bpm=120, time_signature=signature)
-    root = ET.parse(export_score_musicxml(document, tmp_path / f"score-{signature.replace('/', '-')}.musicxml")).getroot()
+    root = ET.parse(
+        export_score_musicxml(document, tmp_path / f"score-{signature.replace('/', '-')}.musicxml")
+    ).getroot()
     assert root.findtext(".//time/beats") == signature.split("/")[0]
     assert root.findtext(".//time/beat-type") == signature.split("/")[1]

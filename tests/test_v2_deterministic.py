@@ -3,14 +3,18 @@ import pytest
 
 from audiotrainer.api import service
 from audiotrainer.backends import capabilities
+from audiotrainer.ml.manager import BackendDisabledError
 
 
-def test_capabilities_expose_only_built_in_engines() -> None:
+def test_capabilities_expose_supported_backends_but_keep_ai_off_by_default() -> None:
     report = capabilities()
     assert report["pitch_backends"] == ["yin"]
     assert report["speech_backends"] == ["baseline"]
     assert report["instrument_backends"] == ["baseline"]
-    assert "optional_dependencies" not in report
+    assert report["ai_supported"] is True
+    assert report["ai_enabled"] is False
+    assert report["supported_pitch_backends"] == ["yin", "pyin", "auto"]
+    assert len(report["model_capabilities"]) == 4
 
 
 def test_instrument_analysis_is_quality_qualified(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -30,6 +34,6 @@ def test_instrument_analysis_is_quality_qualified(monkeypatch: pytest.MonkeyPatc
         (lambda: service.create_score_file("ignored.wav", backend="pyin"), "pitch"),
     ],
 )
-def test_removed_model_backends_fail_before_reading_audio(operation, backend: str) -> None:
-    with pytest.raises(ValueError, match=f"{backend} backend"):
+def test_disabled_model_backends_fail_before_reading_audio(operation, backend: str) -> None:
+    with pytest.raises(BackendDisabledError, match=f"{backend}.*disabled"):
         operation()

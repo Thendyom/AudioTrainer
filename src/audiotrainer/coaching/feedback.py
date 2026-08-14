@@ -139,7 +139,7 @@ def generate_voice_feedback(profile: VocalRange | VoiceTypeEstimate) -> list[Fee
                 category="voice",
                 message=f"Measured stable span: {profile.stable_range_semitones:.1f} semitones.",
                 suggestion="Record a slow siren or scale from comfortable low to comfortable high to improve the range estimate.",
-            )
+            ),
         ]
 
     severity = "warning" if profile.confidence < 0.5 else "info"

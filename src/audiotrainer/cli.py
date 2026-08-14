@@ -14,7 +14,7 @@ from rich.table import Table
 from audiotrainer.api.service import (
     analyze_audio_quality,
     analyze_instrument_file,
-    analyze_pitch_file,
+    analyze_pitch_file_details,
     analyze_voice_profile_file,
     coach_speech_file,
     create_score_file,
@@ -22,6 +22,14 @@ from audiotrainer.api.service import (
 )
 from audiotrainer.backends import capabilities
 from audiotrainer.history import SessionRepository
+from audiotrainer.ml.manager import (
+    AISettings,
+    download_model,
+    get_ai_settings,
+    get_model_capabilities,
+    remove_model,
+    save_ai_settings,
+)
 from audiotrainer.transcription.midi_export import export_midi
 from audiotrainer.transcription.note_events import export_notes_csv
 from audiotrainer.transcription.score_export import export_score_musicxml
@@ -30,7 +38,9 @@ from audiotrainer.transcription.score_document import score_document_to_note_eve
 app = typer.Typer(help="AudioTrainer audio coaching tools.")
 console = Console()
 history_app = typer.Typer(help="Inspect and manage local practice history.")
+models_app = typer.Typer(help="Configure optional local AI and manage model weights.")
 app.add_typer(history_app, name="history")
+app.add_typer(models_app, name="models")
 
 
 @app.command()
@@ -41,11 +51,18 @@ def pitch(
     targets: str | None = typer.Option(None, "--targets", help="Comma-separated ordered exercise notes."),
     save: bool = typer.Option(False, "--save", help="Save metrics to local practice history."),
     retain_audio: bool = typer.Option(False, "--retain-audio", help="Retain a managed copy (requires --save)."),
+    backend: str = typer.Option("yin", "--backend", help="yin, pyin, or auto."),
+    ai: bool = typer.Option(False, "--ai/--no-ai", help="Allow the optional local backend."),
 ) -> None:
     """Detect pitch and score pitch accuracy."""
 
     if targets:
-        result = run_pitch_exercise(file, [item.strip() for item in targets.split(",") if item.strip()])
+        result = run_pitch_exercise(
+            file,
+            [item.strip() for item in targets.split(",") if item.strip()],
+            backend=backend,
+            ai_enabled=ai,
+        )
         _save_if_requested(
             save=save,
             retain_audio=retain_audio,
@@ -60,28 +77,35 @@ def pitch(
         if json_output:
             _print_json({"exercise": result})
         else:
-            _print_model("Exercise", {"targets": ", ".join(result.target_notes), "accuracy": f"{result.overall_accuracy:.1%}", "backend": result.metadata.actual_backend})
+            _print_model(
+                "Exercise",
+                {
+                    "targets": ", ".join(result.target_notes),
+                    "accuracy": f"{result.overall_accuracy:.1%}",
+                    "backend": result.metadata.actual_backend,
+                },
+            )
             _print_feedback(result.feedback)
         return
-    track, score, feedback = analyze_pitch_file(file, target)
-    quality = analyze_audio_quality(file) if save else None
+    track, score, feedback, quality, metadata = analyze_pitch_file_details(file, target, backend=backend, ai_enabled=ai)
     _save_if_requested(
         save=save,
         retain_audio=retain_audio,
         mode="pitch",
         file=file,
-        duration=quality.duration if quality else 0.0,
-        backend="yin",
+        duration=quality.duration,
+        backend=metadata.actual_backend,
         settings={"target": target},
-        result={"track": track, "score": score, "quality": quality},
+        result={"track": track, "score": score, "quality": quality, "metadata": metadata},
         feedback=feedback,
     )
     if json_output:
-        _print_json({"track": track, "score": score, "feedback": feedback})
+        _print_json({"track": track, "score": score, "quality": quality, "metadata": metadata, "feedback": feedback})
         return
 
     console.print(f"[bold]Pitch frames:[/bold] {len(track.frames)}")
     _print_model("Pitch score", score.model_dump())
+    _print_model("Analysis", metadata.model_dump())
     _print_feedback(feedback)
 
 
@@ -98,6 +122,8 @@ def transcribe(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
     save: bool = typer.Option(False, "--save", help="Save metrics to local practice history."),
     retain_audio: bool = typer.Option(False, "--retain-audio", help="Retain a managed copy (requires --save)."),
+    backend: str = typer.Option("yin", "--backend", help="yin, pyin, or auto."),
+    ai: bool = typer.Option(False, "--ai/--no-ai", help="Allow the optional local pitch backend."),
 ) -> None:
     """Convert detected pitch into note events."""
 
@@ -106,6 +132,8 @@ def transcribe(
         bpm=bpm,
         time_signature=time_signature,
         quantization=quantization,
+        backend=backend,
+        ai_enabled=ai,
     )
     _save_if_requested(
         save=save,
@@ -153,10 +181,26 @@ def speech(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
     save: bool = typer.Option(False, "--save", help="Save metrics to local practice history."),
     retain_audio: bool = typer.Option(False, "--retain-audio", help="Retain a managed copy (requires --save)."),
+    language: str | None = typer.Option(None, "--language", help="Language code or automatic detection when omitted."),
+    backend: str = typer.Option("baseline", "--backend", help="baseline, faster-whisper, or auto."),
+    ai: bool = typer.Option(False, "--ai/--no-ai", help="Allow optional local AI."),
+    generative: bool = typer.Option(False, "--generative/--no-generative", help="Add localhost generative coaching."),
+    generative_endpoint: str = typer.Option("http://127.0.0.1:11434", "--generative-endpoint"),
+    generative_model: str = typer.Option("", "--generative-model"),
 ) -> None:
     """Analyze speech prosody and optional reference similarity."""
 
-    result = coach_speech_file(file, reference_path=reference, goal=goal)
+    result = coach_speech_file(
+        file,
+        reference_path=reference,
+        goal=goal,
+        language=language,
+        backend=backend,
+        ai_enabled=ai,
+        generative_coaching=generative,
+        generative_endpoint=generative_endpoint,
+        generative_model=generative_model,
+    )
     _save_if_requested(
         save=save,
         retain_audio=retain_audio,
@@ -176,6 +220,12 @@ def speech(
     _print_model("Prosody", report.model_dump())
     if comparison:
         _print_model("Reference comparison", comparison.model_dump())
+    if result.transcript:
+        _print_model("Transcript", result.transcript.model_dump(exclude={"words"}))
+    if result.word_alignment:
+        _print_model("Word alignment", result.word_alignment.model_dump())
+    if result.ai_coaching_message:
+        console.print(f"[bold]Local AI coaching:[/bold]\n{result.ai_coaching_message}")
     _print_feedback(feedback)
 
 
@@ -185,10 +235,12 @@ def voice_profile(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
     save: bool = typer.Option(False, "--save", help="Save metrics to local practice history."),
     retain_audio: bool = typer.Option(False, "--retain-audio", help="Retain a managed copy (requires --save)."),
+    backend: str = typer.Option("yin", "--backend", help="yin, pyin, or auto."),
+    ai: bool = typer.Option(False, "--ai/--no-ai", help="Allow the optional local pitch backend."),
 ) -> None:
     """Estimate vocal range and rough voice type."""
 
-    vocal_range, estimate, feedback = analyze_voice_profile_file(file)
+    vocal_range, estimate, feedback = analyze_voice_profile_file(file, backend=backend, ai_enabled=ai)
     quality = analyze_audio_quality(file) if save else None
     _save_if_requested(
         save=save,
@@ -196,7 +248,7 @@ def voice_profile(
         mode="voice",
         file=file,
         duration=quality.duration if quality else 0.0,
-        backend="yin",
+        backend=backend,
         settings={"workflow": "guided-range"},
         result={"range": vocal_range, "estimate": estimate, "quality": quality},
         feedback=feedback,
@@ -215,10 +267,12 @@ def instrument(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
     save: bool = typer.Option(False, "--save", help="Save metrics to local practice history."),
     retain_audio: bool = typer.Option(False, "--retain-audio", help="Retain a managed copy (requires --save)."),
+    backend: str = typer.Option("baseline", "--backend", help="baseline, ast, or auto."),
+    ai: bool = typer.Option(False, "--ai/--no-ai", help="Allow optional local AST."),
 ) -> None:
     """Estimate likely instrument class."""
 
-    result = analyze_instrument_file(file)
+    result = analyze_instrument_file(file, backend=backend, ai_enabled=ai)
     _save_if_requested(
         save=save,
         retain_audio=retain_audio,
@@ -244,8 +298,89 @@ def capabilities_command() -> None:
     _print_json(capabilities())
 
 
+@models_app.command("status")
+def models_status() -> None:
+    """Show global switches, optional dependencies, weights, and disk use."""
+
+    settings = get_ai_settings()
+    _print_json({"settings": settings, "models": get_model_capabilities(settings)})
+
+
+@models_app.command("enable")
+def models_enable() -> None:
+    """Enable optional local AI globally; individual feature switches remain independent."""
+
+    settings = get_ai_settings().model_copy(update={"enabled": True})
+    save_ai_settings(settings)
+    console.print("Optional local AI enabled.")
+
+
+@models_app.command("disable")
+def models_disable() -> None:
+    """Disable every optional AI execution path without removing installed weights."""
+
+    settings = get_ai_settings().model_copy(update={"enabled": False})
+    save_ai_settings(settings)
+    console.print("Optional local AI disabled. Deterministic engines remain available.")
+
+
+@models_app.command("configure")
+def models_configure(
+    pitch_enabled: bool | None = typer.Option(None, "--pitch/--no-pitch"),
+    speech_enabled: bool | None = typer.Option(None, "--speech/--no-speech"),
+    instruments_enabled: bool | None = typer.Option(None, "--instruments/--no-instruments"),
+    generative_enabled: bool | None = typer.Option(None, "--generative/--no-generative"),
+    endpoint: str | None = typer.Option(None, "--endpoint"),
+    model: str | None = typer.Option(None, "--model"),
+) -> None:
+    """Update individual local AI features and localhost coaching configuration."""
+
+    current = get_ai_settings()
+    updates = {
+        key: value
+        for key, value in {
+            "pitch_enabled": pitch_enabled,
+            "speech_enabled": speech_enabled,
+            "instruments_enabled": instruments_enabled,
+            "generative_coaching_enabled": generative_enabled,
+            "generative_endpoint": endpoint,
+            "generative_model": model,
+        }.items()
+        if value is not None
+    }
+    settings = AISettings.model_validate({**current.model_dump(), **updates})
+    save_ai_settings(settings)
+    _print_json({"settings": settings})
+
+
+@models_app.command("download")
+def models_download(feature: str = typer.Argument(..., help="speech or instruments")) -> None:
+    """Explicitly download weights. Analysis and startup never call this automatically."""
+
+    if feature not in {"speech", "instruments"}:
+        raise typer.BadParameter("feature must be speech or instruments")
+    destination = download_model(feature, settings=get_ai_settings())
+    console.print(f"Installed {feature} weights in {destination}")
+
+
+@models_app.command("remove")
+def models_remove(
+    feature: str = typer.Argument(..., help="speech or instruments"),
+    yes: bool = typer.Option(False, "--yes", help="Confirm permanent removal of managed weights."),
+) -> None:
+    """Remove one AudioTrainer-managed model directory."""
+
+    if feature not in {"speech", "instruments"}:
+        raise typer.BadParameter("feature must be speech or instruments")
+    if not yes:
+        raise typer.BadParameter("pass --yes to confirm model removal")
+    console.print("Removed." if remove_model(feature) else "No managed weights were installed.")
+
+
 @history_app.command("list")
-def history_list(mode: str | None = typer.Option(None, "--mode"), json_output: bool = typer.Option(False, "--json")) -> None:
+def history_list(
+    mode: str | None = typer.Option(None, "--mode"), json_output: bool = typer.Option(False, "--json")
+) -> None:
     """List local practice sessions."""
 
     sessions = SessionRepository().list(mode=mode)
@@ -256,7 +391,13 @@ def history_list(mode: str | None = typer.Option(None, "--mode"), json_output: b
     for column in ["id", "created", "mode", "duration", "backend"]:
         table.add_column(column)
     for session in sessions:
-        table.add_row(session.session_id, session.created_at.isoformat(timespec="seconds"), session.mode, f"{session.duration:.1f}s", session.backend)
+        table.add_row(
+            session.session_id,
+            session.created_at.isoformat(timespec="seconds"),
+            session.mode,
+            f"{session.duration:.1f}s",
+            session.backend,
+        )
     console.print(table)
 
 
@@ -293,7 +434,15 @@ def run_app(
     root = Path(__file__).resolve().parents[2]
     if backend == "streamlit":
         subprocess.run(
-            [sys.executable, "-m", "streamlit", "run", str(root / "app" / "streamlit_app.py"), "--server.port", str(port)],
+            [
+                sys.executable,
+                "-m",
+                "streamlit",
+                "run",
+                str(root / "app" / "streamlit_app.py"),
+                "--server.port",
+                str(port),
+            ],
             check=False,
         )
         return

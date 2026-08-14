@@ -126,9 +126,7 @@ class SessionRepository:
 
     def get(self, session_id: str) -> PracticeSession | None:
         with self._connect() as connection:
-            row = connection.execute(
-                "SELECT * FROM practice_sessions WHERE session_id = ?", (session_id,)
-            ).fetchone()
+            row = connection.execute("SELECT * FROM practice_sessions WHERE session_id = ?", (session_id,)).fetchone()
         return self._row_to_session(row) if row else None
 
     def delete(self, session_id: str) -> bool:

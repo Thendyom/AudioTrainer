@@ -74,7 +74,11 @@ def suggest_tempo(events: list[NoteEvent]) -> int | None:
 
     if len(events) < 3:
         return None
-    intervals = [right.start_time - left.start_time for left, right in zip(events, events[1:]) if right.start_time > left.start_time]
+    intervals = [
+        right.start_time - left.start_time
+        for left, right in zip(events, events[1:])
+        if right.start_time > left.start_time
+    ]
     if not intervals:
         return None
     bpm = 60.0 / median(intervals)
@@ -106,7 +110,12 @@ def score_document_to_note_events(document: ScoreDocument) -> list[NoteEvent]:
             note=event.note,
             confidence=event.confidence or 0.0,
         )
-        if pending and event.tie_stop and pending.note == candidate.note and abs(pending.end_time - candidate.start_time) < 1e-6:
+        if (
+            pending
+            and event.tie_stop
+            and pending.note == candidate.note
+            and abs(pending.end_time - candidate.start_time) < 1e-6
+        ):
             pending = pending.model_copy(update={"end_time": candidate.end_time})
         else:
             if pending:

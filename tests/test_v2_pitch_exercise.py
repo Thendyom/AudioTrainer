@@ -3,6 +3,7 @@ import pytest
 
 from audiotrainer.api import service
 from audiotrainer.api.schemas import PitchFrame, PitchTrack
+from audiotrainer.ml.manager import BackendDisabledError
 
 
 def test_pitch_sequence_preserves_missed_target_slots(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -28,6 +29,6 @@ def test_pitch_sequence_preserves_missed_target_slots(monkeypatch: pytest.Monkey
     assert result.overall_accuracy < 1.0
 
 
-def test_pitch_exercise_rejects_removed_model_backend() -> None:
-    with pytest.raises(ValueError, match="not part of this release"):
+def test_pitch_exercise_rejects_disabled_model_backend() -> None:
+    with pytest.raises(BackendDisabledError, match="disabled"):
         service.run_pitch_exercise("ignored.wav", ["A4"], backend="pyin")

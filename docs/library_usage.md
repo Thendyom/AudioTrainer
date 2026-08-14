@@ -57,6 +57,22 @@ result = coach_speech_file(
 )
 ```
 
+To request local word-level transcription after explicitly installing and downloading the speech model:
+
+```python
+result = coach_speech_file(
+    "take.wav",
+    reference_path="reference.wav",
+    backend="faster-whisper",
+    ai_enabled=True,
+    language=None,
+)
+print(result.transcript.text)
+print(result.word_alignment)
+```
+
+Word alignment reports matched, omitted, substituted, and added words. It does not claim phoneme scoring.
+
 ## Voice Profile
 
 ```python
@@ -78,6 +94,19 @@ estimate = classify_instrument(features)
 ```
 
 The default classifier is rule-based and intended as a small baseline.
+
+Use `analyze_instrument_file(..., backend="ast", ai_enabled=True)` for the optional experimental AST adapter. Low confidence or a small top-two margin returns `unknown`.
+
+## Optional AI settings
+
+```python
+from audiotrainer.ml import AISettings, get_ai_settings, save_ai_settings
+
+settings = get_ai_settings()
+save_ai_settings(settings.model_copy(update={"enabled": False}))
+```
+
+Library service calls still require an explicit `ai_enabled=True`; this keeps each analysis predictable and lets callers enforce a per-request off switch.
 
 ## Recording Quality and Exercises
 

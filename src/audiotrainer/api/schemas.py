@@ -146,6 +146,21 @@ class AnalysisMetadata(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class ModelCapability(BaseModel):
+    """Installation and cache state for one optional local backend."""
+
+    feature: Literal["pitch", "speech", "instruments", "generative_coaching"]
+    backend: str
+    dependency_installed: bool
+    weights_installed: bool
+    available: bool
+    enabled: bool
+    disk_usage_bytes: int = Field(default=0, ge=0)
+    install_command: str | None = None
+    model_id: str | None = None
+    status: str
+
+
 class AudioQualityReport(BaseModel):
     """Input quality measurements used to qualify coaching results."""
 
@@ -239,7 +254,55 @@ class SpeechCoachingResult(BaseModel):
     quality: AudioQualityReport
     prosody: ProsodyReport
     reference_comparison: PronunciationReport | None = None
+    transcript: "TranscriptReport | None" = None
+    reference_transcript: "TranscriptReport | None" = None
+    word_alignment: "TranscriptAlignment | None" = None
+    ai_coaching_message: str | None = None
+    ai_coaching_backend: str | None = None
     feedback: list[FeedbackItem] = Field(default_factory=list)
+
+
+class TranscriptWord(BaseModel):
+    """One timestamped ASR word."""
+
+    word: str
+    start: float = Field(ge=0.0)
+    end: float = Field(ge=0.0)
+    confidence: float = Field(ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def validate_times(self) -> "TranscriptWord":
+        if self.end < self.start:
+            raise ValueError("word end must not precede word start")
+        return self
+
+
+class TranscriptReport(BaseModel):
+    """Local speech-to-text output and word-derived delivery metrics."""
+
+    text: str
+    language: str | None = None
+    language_probability: float | None = Field(default=None, ge=0.0, le=1.0)
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    duration: float = Field(ge=0.0)
+    words: list[TranscriptWord] = Field(default_factory=list)
+    word_count: int = Field(ge=0)
+    words_per_minute: float | None = Field(default=None, ge=0.0)
+    repetitions: list[str] = Field(default_factory=list)
+    filler_words: list[str] | None = None
+    pause_positions: list[tuple[float, float]] = Field(default_factory=list)
+
+
+class TranscriptAlignment(BaseModel):
+    """Ordered word alignment; deliberately not a phoneme score."""
+
+    matched_words: int = Field(ge=0)
+    omitted_words: list[str] = Field(default_factory=list)
+    substituted_words: list[tuple[str, str]] = Field(default_factory=list)
+    added_words: list[str] = Field(default_factory=list)
+    match_score: float = Field(ge=0.0, le=1.0)
+    delivery_timing_difference: float | None = None
+    explanation: str = "Word-level alignment only; this is not phoneme pronunciation scoring."
 
 
 class InstrumentCandidate(BaseModel):
@@ -280,6 +343,8 @@ class PitchAnalysisResponse(BaseModel):
     track: PitchTrack
     score: PitchScore
     feedback: list[FeedbackItem]
+    quality: AudioQualityReport | None = None
+    metadata: AnalysisMetadata | None = None
 
 
 class TranscriptionResponse(BaseModel):
@@ -292,6 +357,8 @@ class VoiceProfileResponse(BaseModel):
     range: VocalRange
     estimate: VoiceTypeEstimate
     feedback: list[FeedbackItem]
+    quality: AudioQualityReport | None = None
+    metadata: AnalysisMetadata | None = None
 
 
 class InstrumentResponse(BaseModel):
@@ -306,6 +373,12 @@ class CapabilitiesResponse(BaseModel):
     instrument_backends: list[str]
     monophonic_transcription: bool
     phoneme_scoring: bool
+    ai_supported: bool = True
+    ai_enabled: bool = False
+    supported_pitch_backends: list[str] = Field(default_factory=list)
+    supported_speech_backends: list[str] = Field(default_factory=list)
+    supported_instrument_backends: list[str] = Field(default_factory=list)
+    model_capabilities: list[ModelCapability] = Field(default_factory=list)
 
 
 def _is_note_name(value: str | None) -> bool:

@@ -34,6 +34,12 @@ from audiotrainer.coaching.feedback import (
 from audiotrainer.coaching.scoring import infer_target_note, score_pitch_accuracy
 from audiotrainer.instruments.classifier import classify_instrument, rank_instrument_candidates
 from audiotrainer.instruments.features import extract_instrument_features
+from audiotrainer.ml.alignment import align_transcripts
+from audiotrainer.ml.generative import generate_local_coaching
+from audiotrainer.ml.instruments import classify_ast
+from audiotrainer.ml.manager import BackendUnavailableError
+from audiotrainer.ml.pitch import detect_pitch_backend
+from audiotrainer.ml.speech import transcribe_file_local
 from audiotrainer.pitch.yin import detect_pitch
 from audiotrainer.speech.pronunciation import compare_reference_speech
 from audiotrainer.speech.prosody import analyze_prosody, detect_speech_pitch
@@ -42,21 +48,59 @@ from audiotrainer.transcription.note_events import pitch_track_to_notes
 from audiotrainer.transcription.score_document import create_score_document
 
 
-def analyze_pitch_file(path: str | Path, target_note: str | None = None) -> tuple[PitchTrack, PitchScore, list[FeedbackItem]]:
+def analyze_pitch_file(
+    path: str | Path,
+    target_note: str | None = None,
+    *,
+    backend: str = "yin",
+    ai_enabled: bool = False,
+) -> tuple[PitchTrack, PitchScore, list[FeedbackItem]]:
     """Load a file, detect pitch, score it, and return feedback."""
 
+    track, score, feedback, _, _ = analyze_pitch_file_details(path, target_note, backend=backend, ai_enabled=ai_enabled)
+    return track, score, feedback
+
+
+def analyze_pitch_file_details(
+    path: str | Path,
+    target_note: str | None = None,
+    *,
+    backend: str = "yin",
+    ai_enabled: bool = False,
+) -> tuple[PitchTrack, PitchScore, list[FeedbackItem], AudioQualityReport, AnalysisMetadata]:
+    """Pitch analysis with quality and complete backend provenance."""
+
+    started = perf_counter()
     audio, sr = load_audio(path)
-    track = detect_pitch(audio, sr)
+    _validate_ai_request(backend, optional="pyin", ai_enabled=ai_enabled, feature="pitch")
+    track, actual, fallback = _run_pitch_backend(audio, sr, backend=backend, ai_enabled=ai_enabled)
     selected_target = target_note or infer_target_note(track)
     score = score_pitch_accuracy(track, selected_target)
-    return track, score, generate_pitch_feedback(score)
+    feedback = generate_pitch_feedback(score)
+    quality = analyze_quality(audio, sr, pitch_track=track)
+    return (
+        track,
+        score,
+        feedback,
+        quality,
+        AnalysisMetadata(
+            requested_backend=backend,
+            actual_backend=actual,
+            fallback_reason=fallback,
+            processing_time_ms=(perf_counter() - started) * 1000,
+            warnings=list(quality.warnings),
+        ),
+    )
 
 
-def transcribe_file(path: str | Path) -> tuple[PitchTrack, list[NoteEvent]]:
+def transcribe_file(
+    path: str | Path, *, backend: str = "yin", ai_enabled: bool = False
+) -> tuple[PitchTrack, list[NoteEvent]]:
     """Load a file and convert detected pitch to note events."""
 
     audio, sr = load_audio(path)
-    track = detect_pitch(audio, sr)
+    _validate_ai_request(backend, optional="pyin", ai_enabled=ai_enabled, feature="pitch")
+    track, _, _ = _run_pitch_backend(audio, sr, backend=backend, ai_enabled=ai_enabled)
     return track, pitch_track_to_notes(track)
 
 
@@ -81,30 +125,41 @@ def compare_speech_files(user_path: str | Path, reference_path: str | Path) -> P
     return compare_reference_speech(user_audio, ref_audio, user_sr)
 
 
-def analyze_voice_profile_file(path: str | Path) -> tuple[VocalRange, VoiceTypeEstimate, list[FeedbackItem]]:
+def analyze_voice_profile_file(
+    path: str | Path, *, backend: str = "yin", ai_enabled: bool = False
+) -> tuple[VocalRange, VoiceTypeEstimate, list[FeedbackItem]]:
     """Estimate vocal range, likely voice type, and feedback from a file."""
 
-    _, vocal_range, estimate, feedback, _, _ = analyze_voice_profile_details(path)
+    _, vocal_range, estimate, feedback, _, _ = analyze_voice_profile_details(
+        path, backend=backend, ai_enabled=ai_enabled
+    )
     return vocal_range, estimate, feedback
 
 
 def analyze_voice_profile_details(
     path: str | Path,
+    *,
+    backend: str = "yin",
+    ai_enabled: bool = False,
 ) -> tuple[PitchTrack, VocalRange, VoiceTypeEstimate, list[FeedbackItem], AudioQualityReport, AnalysisMetadata]:
     """Return a complete voice profile without repeating pitch detection in the UI."""
 
     started = perf_counter()
     audio, sr = load_audio(path)
-    track = detect_pitch(audio, sr, fmin=55.0, fmax=1_100.0)
+    _validate_ai_request(backend, optional="pyin", ai_enabled=ai_enabled, feature="pitch")
+    track, actual, fallback = _run_pitch_backend(
+        audio, sr, backend=backend, ai_enabled=ai_enabled, fmin=55.0, fmax=1_100.0
+    )
     vocal_range = estimate_vocal_range(track)
     prosody = analyze_prosody(audio, sr, pitch_track=track)
     estimate = classify_voice_type(vocal_range, speaking_pitch=prosody.mean_pitch_hz)
     feedback = [*generate_voice_feedback(vocal_range), *generate_voice_feedback(estimate)]
     quality = analyze_quality(audio, sr, pitch_track=track)
     metadata = AnalysisMetadata(
-        requested_backend="yin",
-        actual_backend="yin",
+        requested_backend=backend,
+        actual_backend=actual,
         processing_time_ms=(perf_counter() - started) * 1000,
+        fallback_reason=fallback,
         warnings=list(quality.warnings),
     )
     return track, vocal_range, estimate, feedback, quality, metadata
@@ -124,19 +179,48 @@ def analyze_instrument_file(
     backend: str = "baseline",
     confidence_threshold: float = 0.30,
     margin_threshold: float = 0.08,
+    ai_enabled: bool = False,
+    data_dir: str | Path | None = None,
 ) -> InstrumentAnalysisResult:
-    """Classify an instrument with the quality-qualified rule-based baseline."""
+    """Classify with optional local AST and deterministic fallback."""
 
-    _require_backend(backend, actual="baseline", kind="instrument")
+    requested = backend.lower().strip()
+    if requested not in {"baseline", "auto", "ast"}:
+        raise ValueError("instrument backend must be baseline, ast, or auto")
+    _validate_ai_request(requested, optional="ast", ai_enabled=ai_enabled, feature="instruments")
     started = perf_counter()
     audio, sr = load_audio(path)
     quality = analyze_quality(audio, sr)
-    features = extract_instrument_features(audio, sr)
-    estimate = classify_instrument(features)
-    candidates = rank_instrument_candidates(features)
-    top = candidates[0] if candidates else InstrumentCandidate(label="unknown", confidence=0.0)
-    runner_up = candidates[1].confidence if len(candidates) > 1 else 0.0
-    margin = max(0.0, top.confidence - runner_up)
+    actual = "baseline"
+    fallback = None
+    if requested in {"auto", "ast"}:
+        try:
+            estimate, candidates, margin = classify_ast(
+                audio,
+                sr,
+                ai_enabled=ai_enabled,
+                data_dir=data_dir,
+                confidence_threshold=confidence_threshold,
+                margin_threshold=margin_threshold,
+            )
+            actual = "ast"
+        except BackendUnavailableError as exc:
+            if requested == "ast":
+                raise
+            fallback = f"{exc}; used the deterministic instrument baseline."
+        except RuntimeError as exc:
+            if requested == "ast":
+                raise
+            fallback = f"{exc}; used the deterministic instrument baseline."
+    if actual == "baseline":
+        features = extract_instrument_features(audio, sr)
+        estimate = classify_instrument(features)
+        candidates = rank_instrument_candidates(features)
+        top = candidates[0] if candidates else InstrumentCandidate(label="unknown", confidence=0.0)
+        runner_up = candidates[1].confidence if len(candidates) > 1 else 0.0
+        margin = max(0.0, top.confidence - runner_up)
+    else:
+        top = candidates[0] if candidates else InstrumentCandidate(label="unknown", confidence=0.0)
     if top.confidence < confidence_threshold or margin < margin_threshold or quality.rms < 1e-5:
         estimate = InstrumentEstimate(
             label="unknown",
@@ -147,8 +231,9 @@ def analyze_instrument_file(
     return InstrumentAnalysisResult(
         metadata=AnalysisMetadata(
             requested_backend=backend,
-            actual_backend="baseline",
+            actual_backend=actual,
             processing_time_ms=(perf_counter() - started) * 1000,
+            fallback_reason=fallback,
             warnings=warnings,
         ),
         quality=quality,
@@ -162,7 +247,7 @@ def analyze_audio_quality(path: str | Path) -> AudioQualityReport:
     """Analyze file recording quality without persisting data."""
 
     audio, sr = load_audio(path)
-    track = detect_pitch(audio, sr)
+    track, _, _ = _run_pitch_backend(audio, sr, backend="yin", ai_enabled=False)
     return analyze_quality(audio, sr, pitch_track=track)
 
 
@@ -171,19 +256,20 @@ def run_pitch_exercise(
     target_notes: list[str],
     *,
     backend: str = "yin",
+    ai_enabled: bool = False,
 ) -> PitchExerciseResult:
     """Score sustained-note or ordered note-sequence practice."""
 
     if not target_notes:
         raise ValueError("at least one target note is required")
-    _require_backend(backend, actual="yin", kind="pitch")
     from audiotrainer.pitch.notes import note_name_to_midi
 
     for target in target_notes:
         note_name_to_midi(target)
+    _validate_ai_request(backend, optional="pyin", ai_enabled=ai_enabled, feature="pitch")
     started = perf_counter()
     audio, sr = load_audio(path)
-    track = detect_pitch(audio, sr)
+    track, actual, fallback = _run_pitch_backend(audio, sr, backend=backend, ai_enabled=ai_enabled)
     quality = analyze_quality(audio, sr, pitch_track=track)
     chunks = _split_frames(track.frames, len(target_notes))
     results: list[PitchExerciseNoteResult] = []
@@ -196,9 +282,7 @@ def run_pitch_exercise(
         detected = infer_target_note(partial)
         missed = score.voiced_frame_count < 2
         if missed:
-            score = score.model_copy(
-                update={"accuracy": 0.0, "stability": 0.0, "mean_abs_cents": None}
-            )
+            score = score.model_copy(update={"accuracy": 0.0, "stability": 0.0, "mean_abs_cents": None})
         results.append(
             PitchExerciseNoteResult(
                 target_note=target,
@@ -214,8 +298,9 @@ def run_pitch_exercise(
     return PitchExerciseResult(
         metadata=AnalysisMetadata(
             requested_backend=backend,
-            actual_backend="yin",
+            actual_backend=actual,
             processing_time_ms=(perf_counter() - started) * 1000,
+            fallback_reason=fallback,
             warnings=list(quality.warnings),
         ),
         quality=quality,
@@ -234,19 +319,26 @@ def create_score_file(
     time_signature: str = "4/4",
     quantization: int = 4,
     backend: str = "yin",
+    ai_enabled: bool = False,
 ) -> tuple[PitchTrack, list[NoteEvent], ScoreDocument, AnalysisMetadata]:
     """Transcribe a file into editable, quantized monophonic notation."""
 
-    _require_backend(backend, actual="yin", kind="pitch")
+    _validate_ai_request(backend, optional="pyin", ai_enabled=ai_enabled, feature="pitch")
     started = perf_counter()
     audio, sr = load_audio(path)
-    track = detect_pitch(audio, sr)
+    track, actual, fallback = _run_pitch_backend(audio, sr, backend=backend, ai_enabled=ai_enabled)
     events = pitch_track_to_notes(track)
     document = create_score_document(events, bpm=bpm, time_signature=time_signature, quantization=quantization)
-    return track, events, document, AnalysisMetadata(
-        requested_backend=backend,
-        actual_backend="yin",
-        processing_time_ms=(perf_counter() - started) * 1000,
+    return (
+        track,
+        events,
+        document,
+        AnalysisMetadata(
+            requested_backend=backend,
+            actual_backend=actual,
+            processing_time_ms=(perf_counter() - started) * 1000,
+            fallback_reason=fallback,
+        ),
     )
 
 
@@ -257,15 +349,19 @@ def coach_speech_file(
     goal: str = "balanced",
     language: str | None = None,
     backend: str = "baseline",
+    ai_enabled: bool = False,
+    data_dir: str | Path | None = None,
+    generative_coaching: bool = False,
+    generative_ai_enabled: bool | None = None,
+    generative_endpoint: str = "http://127.0.0.1:11434",
+    generative_model: str = "",
 ) -> SpeechCoachingResult:
-    """Run deterministic prosody coaching and optional reference comparison.
+    """Run prosody coaching with optional local ASR, word alignment, and local coaching."""
 
-    ``language`` remains accepted for source compatibility but is not used because
-    this release intentionally performs no speech-to-text processing.
-    """
-
-    del language
-    _require_backend(backend, actual="baseline", kind="speech")
+    requested = backend.lower().strip()
+    if requested not in {"baseline", "auto", "faster-whisper"}:
+        raise ValueError("speech backend must be baseline, faster-whisper, or auto")
+    _validate_ai_request(requested, optional="faster-whisper", ai_enabled=ai_enabled, feature="speech")
     started = perf_counter()
     audio, sr = load_audio(path)
     speech_pitch = detect_speech_pitch(audio, sr)
@@ -273,16 +369,57 @@ def coach_speech_file(
     quality = analyze_quality(audio, sr, pitch_track=speech_pitch)
     comparison = compare_speech_files(path, reference_path) if reference_path else None
     feedback = generate_speech_feedback(prosody, goal=goal)
+    actual = "baseline"
+    fallback = None
+    transcript = None
+    reference_transcript = None
+    alignment = None
+    warnings = list(quality.warnings)
+    if requested in {"auto", "faster-whisper"}:
+        try:
+            transcript = transcribe_file_local(path, language=language, ai_enabled=ai_enabled, data_dir=data_dir)
+            if reference_path:
+                reference_transcript = transcribe_file_local(
+                    reference_path, language=language, ai_enabled=ai_enabled, data_dir=data_dir
+                )
+                alignment = align_transcripts(transcript, reference_transcript)
+            actual = "faster-whisper"
+        except RuntimeError as exc:
+            if requested == "faster-whisper":
+                raise
+            fallback = f"{exc}; used language-neutral delivery metrics only."
+    ai_message = None
+    ai_backend = None
+    if generative_coaching:
+        try:
+            ai_message = generate_local_coaching(
+                prosody=prosody,
+                transcript=transcript,
+                alignment=alignment,
+                goal=goal,
+                endpoint=generative_endpoint,
+                model=generative_model,
+                ai_enabled=ai_enabled if generative_ai_enabled is None else generative_ai_enabled,
+            )
+            ai_backend = f"local:{generative_model}"
+        except RuntimeError as exc:
+            warnings.append(str(exc))
     return SpeechCoachingResult(
         metadata=AnalysisMetadata(
             requested_backend=backend,
-            actual_backend="baseline",
+            actual_backend=actual,
             processing_time_ms=(perf_counter() - started) * 1000,
-            warnings=list(quality.warnings),
+            fallback_reason=fallback,
+            warnings=warnings,
         ),
         quality=quality,
         prosody=prosody,
         reference_comparison=comparison,
+        transcript=transcript,
+        reference_transcript=reference_transcript,
+        word_alignment=alignment,
+        ai_coaching_message=ai_message,
+        ai_coaching_backend=ai_backend,
         feedback=feedback,
     )
 
@@ -302,8 +439,19 @@ def _frame_step(track: PitchTrack) -> float:
     return max(0.0, track.frames[1].time - track.frames[0].time)
 
 
-def _require_backend(requested: str, *, actual: str, kind: str) -> None:
-    """Accept the deterministic engine and the legacy ``auto`` alias only."""
+def _run_pitch_backend(audio, sr: int, *, backend: str, ai_enabled: bool, **options):
+    """Keep the long-standing service-level YIN seam available to callers and tests."""
 
-    if requested.lower().strip() not in {actual, "auto"}:
-        raise ValueError(f"{kind} backend must be {actual}; optional model backends are not part of this release")
+    if backend.lower().strip() in {"yin", "baseline"}:
+        return detect_pitch(audio, sr, **options), "yin", None
+    return detect_pitch_backend(audio, sr, backend=backend, ai_enabled=ai_enabled, **options)
+
+
+def _validate_ai_request(requested: str, *, optional: str, ai_enabled: bool, feature: str) -> None:
+    normalized = requested.lower().strip()
+    if normalized == optional and not ai_enabled:
+        from audiotrainer.ml.manager import BackendDisabledError
+
+        raise BackendDisabledError(
+            f"{feature} backend {optional} is disabled; explicitly enable local AI for this analysis"
+        )

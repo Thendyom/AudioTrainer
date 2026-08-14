@@ -22,6 +22,9 @@ from audiotrainer.api.schemas import (
     ScoreDocument,
     ScoreEvent,
     SpeechCoachingResult,
+    TranscriptAlignment,
+    TranscriptReport,
+    TranscriptWord,
 )
 
 __all__ = [
@@ -46,4 +49,7 @@ __all__ = [
     "ScoreDocument",
     "ScoreEvent",
     "SpeechCoachingResult",
+    "TranscriptAlignment",
+    "TranscriptReport",
+    "TranscriptWord",
 ]

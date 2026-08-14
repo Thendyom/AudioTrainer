@@ -61,7 +61,14 @@ def plot_score(events: list[NoteEvent], *, title: str = "Score", bpm: int = 120)
         _draw_stem(ax, x, y, duration_name)
         label_y = -1.2 if y >= 2.3 else 5.25
         ax.text(x, label_y, event.note, fontsize=9, color="#334155", ha="center", va="center")
-        ax.text(x, label_y - 0.35 if label_y < 0 else label_y + 0.35, duration_name, fontsize=7, color="#64748b", ha="center")
+        ax.text(
+            x,
+            label_y - 0.35 if label_y < 0 else label_y + 0.35,
+            duration_name,
+            fontsize=7,
+            color="#64748b",
+            ha="center",
+        )
 
     ax.set_title(title)
     ax.set_xlim(0, right_edge + 0.25)

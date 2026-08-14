@@ -56,13 +56,10 @@ def analyze_prosody(
         estimated_speech_rate=speech_rate,
         monotony_score=0.0,
         pitch_contour=[
-            (frame.time, frame.frequency_hz)
-            for frame in pitch_track.frames
-            if frame.frequency_hz is not None
+            (frame.time, frame.frequency_hz) for frame in pitch_track.frames if frame.frequency_hz is not None
         ],
         intensity_contour=[
-            (index * max(64, int(0.01 * sr)) / sr, float(value))
-            for index, value in enumerate(intensity)
+            (index * max(64, int(0.01 * sr)) / sr, float(value)) for index, value in enumerate(intensity)
         ],
         pauses=pauses.pauses,
     )

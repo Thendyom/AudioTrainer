@@ -16,6 +16,7 @@ jobs:
           cache: pip
       - run: pip install -e ".[dev,app]"
       - run: ruff check --select E9,F src app tests
+      - run: ruff format --check src app tests
       - run: python -m compileall -q src app tests
       - run: pytest --cov --cov-report=term-missing
 

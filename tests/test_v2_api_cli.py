@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 
 from app.fastapi_app import app
 from audiotrainer.cli import app as cli_app
+from audiotrainer.history import SessionRepository
 
 
 def wav_bytes(frequency: float = 440.0, sr: int = 8_000) -> bytes:
@@ -58,9 +59,7 @@ def test_api_rejects_invalid_note_and_file_type() -> None:
     assert response.status_code == 400
 
 
-def test_api_transcription_contract_and_opt_in_persistence(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_api_transcription_contract_and_opt_in_persistence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from fastapi.testclient import TestClient
 
     monkeypatch.setenv("AUDIOTRAINER_DATA_DIR", str(tmp_path / "api-data"))
@@ -96,7 +95,9 @@ def test_cli_score_exports_and_deterministic_capabilities(tmp_path: Path) -> Non
     runner = CliRunner()
     xml_path = tmp_path / "score.musicxml"
     json_path = tmp_path / "score.json"
-    result = runner.invoke(cli_app, ["transcribe", str(input_path), "--musicxml-out", str(xml_path), "--json-out", str(json_path)])
+    result = runner.invoke(
+        cli_app, ["transcribe", str(input_path), "--musicxml-out", str(xml_path), "--json-out", str(json_path)]
+    )
     assert result.exit_code == 0, result.output
     assert xml_path.exists() and json_path.exists()
     result = runner.invoke(cli_app, ["capabilities"])
@@ -148,7 +149,7 @@ def test_streamlit_all_pages_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyPat
         "Speech": "Speech coach",
         "Voice": "Voice profile",
         "Instruments": "Instrument lab",
-        "Privacy": "Privacy & data",
+        "Models & Privacy": "Models & Privacy",
     }
     for page, heading in expected.items():
         test.sidebar.radio[0].set_value(page).run()
@@ -206,3 +207,36 @@ test_streamlit_app_smoke = pytest.mark.ui(test_streamlit_app_smoke)
 test_streamlit_all_pages_smoke = pytest.mark.ui(test_streamlit_all_pages_smoke)
 test_streamlit_recorded_workflows = pytest.mark.ui(test_streamlit_recorded_workflows)
 test_streamlit_speech_reference_workflow = pytest.mark.ui(test_streamlit_speech_reference_workflow)
+
+
+@pytest.mark.ui
+def test_streamlit_ai_controls_default_off_and_persist(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from streamlit.testing.v1 import AppTest
+
+    data_dir = tmp_path / "ai-controls"
+    monkeypatch.setenv("AUDIOTRAINER_DATA_DIR", str(data_dir))
+    test = AppTest.from_file("app/streamlit_app.py", default_timeout=10).run()
+    assert test.sidebar.toggle[0].label == "Enable optional local AI"
+    assert test.sidebar.toggle[0].value is False
+    test.sidebar.toggle[0].set_value(True).run()
+    assert not test.exception
+    from audiotrainer.ml.manager import get_ai_settings
+
+    assert get_ai_settings(SessionRepository(data_dir)).enabled is True
+
+
+@pytest.mark.ui
+def test_streamlit_auto_backend_discloses_actual_engine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from streamlit.testing.v1 import AppTest
+    from audiotrainer.ml.manager import AISettings, save_ai_settings
+
+    data_dir = tmp_path / "ai-auto"
+    monkeypatch.setenv("AUDIOTRAINER_DATA_DIR", str(data_dir))
+    save_ai_settings(AISettings(enabled=True), SessionRepository(data_dir))
+    test = AppTest.from_file("app/streamlit_app.py", default_timeout=20).run()
+    test.sidebar.radio[0].set_value("Pitch").run()
+    test.selectbox[0].set_value("auto").run()
+    test.file_uploader[1].upload("tone.wav", wav_bytes(sr=16_000), "audio/wav").run()
+    next(button for button in test.button if button.label == "Analyze recording").click().run(timeout=20)
+    assert not test.exception and not test.error
+    assert any("Requested auto" in item.value and "ran" in item.value for item in test.caption)

@@ -39,7 +39,9 @@ def test_history_settings_and_clear(tmp_path: Path) -> None:
     repository.set_setting("retain_audio_default", True)
     assert repository.get_setting("retain_audio_default") is True
     for mode in ["pitch", "speech"]:
-        repository.save(mode=mode, duration=1.0, source="upload", backend="baseline", settings={}, result={}, feedback=[])
+        repository.save(
+            mode=mode, duration=1.0, source="upload", backend="baseline", settings={}, result={}, feedback=[]
+        )
     assert repository.clear() == 2
     assert repository.list() == []
 
